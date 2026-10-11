@@ -1,0 +1,73 @@
+{
+  "minigraf": {
+    "repository": "https://github.com/project-minigraf/minigraf",
+    "version": "2.0.5",
+    "tag": "v2.0.5",
+    "commit": "a861e551162623c8f4752f94daf5b637543f8358"
+  },
+  "minigraf-c": {
+    "repository": "https://github.com/project-minigraf/minigraf-c",
+    "version": "2.0.5",
+    "tag": "v2.0.5",
+    "commit": "8422f9f048d8821a759cbe9e1c2ea6b8f53621dc"
+  },
+  "header": {
+    "path": "native/include/minigraf.h",
+    "source": "https://raw.githubusercontent.com/project-minigraf/minigraf-c/v2.0.5/include/minigraf.h",
+    "sha256": "8603C0745EDE143BC9C231E2812E7BCDC2E9B37186CF3E99E8E8F9AE442ADE7D",
+    "bytes": 1297,
+    "note": "Canonical LF blob from the v2.0.5 tag; identical in all release archives. The windows zip carries the same header with CRLF line endings (1333 bytes, sha256 3A1A58456DEA6F34AE6437CA455F8B90EFC0062CD4553BA65BA42A4D9B73DAFD)."
+  },
+  "assets": {
+    "win-x64": {
+      "rid": "win-x64",
+      "binary": "minigraf.dll",
+      "release_asset": "minigraf-c-v2.0.5-windows-x86_64.zip",
+      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.5/minigraf-c-v2.0.5-windows-x86_64.zip",
+      "release_sha256": "788AF84FD82DEEE8B1065A4D4929804F1D8BC33A69836FED068EF2DCB172BE99",
+      "binary_sha256": "C534DD26CAC77C4F505E510F9C9D647923796494D86C5B82EF2BC7609B4E21BC",
+      "binary_bytes": 2163712,
+      "qualified": true
+    },
+    "linux-x64": {
+      "rid": "linux-x64",
+      "binary": "libminigraf.so",
+      "release_asset": "minigraf-c-v2.0.5-linux-x86_64.tar.gz",
+      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.5/minigraf-c-v2.0.5-linux-x86_64.tar.gz",
+      "release_sha256": "41E8DB72E8086A726B57EBECBD2B2448259C9636E3F6CA2646953EF0E6A3A5D5",
+      "binary_sha256": "3A90A693F623C7CFD40177C15DF907E03A240BC7FB1C37326DFC8937FB1D90D8",
+      "binary_bytes": 2820832,
+      "qualified": false
+    },
+    "linux-arm64": {
+      "rid": "linux-arm64",
+      "binary": "libminigraf.so",
+      "release_asset": "minigraf-c-v2.0.5-linux-aarch64.tar.gz",
+      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.5/minigraf-c-v2.0.5-linux-aarch64.tar.gz",
+      "release_sha256": "DF5308CC81DC80DF9E231EB1B6A205F1DC8D60E687C24932D82A829E38678F6B",
+      "binary_sha256": "8EDC79174F1092481B7E35AC92BFA12F045D42EA3607815F85AD484F0295D613",
+      "binary_bytes": 2655072,
+      "qualified": false
+    },
+    "osx-x64": {
+      "rid": "osx-x64",
+      "binary": "libminigraf.dylib",
+      "release_asset": "minigraf-c-v2.0.5-macos-universal2.tar.gz",
+      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.5/minigraf-c-v2.0.5-macos-universal2.tar.gz",
+      "release_sha256": "76188BC84B3DD4AE6AB3942F3D3EA0E5040B941EA76C94B0B9D6C1A5B5170ED8",
+      "binary_sha256": "9163B4E34FF984F929F620ABBAFC6B29A9C3AD5821D317F894CCFDB6EE70427B",
+      "binary_bytes": 4919440,
+      "qualified": false
+    },
+    "osx-arm64": {
+      "rid": "osx-arm64",
+      "binary": "libminigraf.dylib",
+      "release_asset": "minigraf-c-v2.0.5-macos-universal2.tar.gz",
+      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.5/minigraf-c-v2.0.5-macos-universal2.tar.gz",
+      "release_sha256": "76188BC84B3DD4AE6AB3942F3D3EA0E5040B941EA76C94B0B9D6C1A5B5170ED8",
+      "binary_sha256": "9163B4E34FF984F929F620ABBAFC6B29A9C3AD5821D317F894CCFDB6EE70427B",
+      "binary_bytes": 4919440,
+      "qualified": false
+    }
+  }
+}
