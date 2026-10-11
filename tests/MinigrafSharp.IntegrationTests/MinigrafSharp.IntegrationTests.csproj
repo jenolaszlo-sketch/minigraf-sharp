@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/MinigrafSharp/MinigrafSharp.csproj" /></ItemGroup>
+  <!-- M0: only win-x64 is qualified. M1 generalizes per-RID staging. -->
+  <ItemGroup Condition="Exists('../../native/staging/win-x64/minigraf.dll')">
+    <None Include="../../native/staging/win-x64/minigraf.dll"
+          Link="runtimes/win-x64/native/minigraf.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
