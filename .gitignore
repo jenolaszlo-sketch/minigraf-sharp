@@ -1,0 +1,16 @@
+bin/
+obj/
+target/
+artifacts/
+TestResults/
+.vs/
+.idea/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+*.log
+native/staging/
+native/upstream/
+native/target/
+.tools/

@@ -1,0 +1,15 @@
+MinigrafSharp
+Copyright (c) 2026 MinigrafSharp contributors
+
+MinigrafSharp is an independent .NET binding for Minigraf and is not
+currently an official Project Minigraf package. Minigraf is developed by
+Project Minigraf and its contributors.
+
+Minigraf and minigraf-c are licensed under MIT OR Apache-2.0.
+Upstream: https://github.com/project-minigraf/minigraf
+C binding: https://github.com/project-minigraf/minigraf-c
+Pinned baseline: Minigraf v2.0.5, minigraf-c v2.0.5 (see native/upstream.json).
+
+MinigrafSharp itself is licensed under Apache-2.0 (see LICENSE).
+Redistributed native assets remain under their upstream MIT OR Apache-2.0
+terms; preserve the upstream license material when redistributing them.

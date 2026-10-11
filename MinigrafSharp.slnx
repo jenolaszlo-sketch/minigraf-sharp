@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MinigrafSharp/MinigrafSharp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MinigrafSharp.Tests/MinigrafSharp.Tests.csproj" />
+    <Project Path="tests/MinigrafSharp.IntegrationTests/MinigrafSharp.IntegrationTests.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/MinigrafSharp.QuickStart/MinigrafSharp.QuickStart.csproj" />
+  </Folder>
+</Solution>
