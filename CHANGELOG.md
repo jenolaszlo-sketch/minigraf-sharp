@@ -28,3 +28,10 @@ package and never copy the upstream Minigraf version number.
   diagnostic) and `Checkpoint()` (verified 0/−1 contract, same
   per-database gate, `MinigrafCheckpointException`), with close/reopen
   proof on `win-x64`. Recovery qualification remains deferred.
+- M1d v2.0.5 qualification: reproducible recovery, corruption, and temporal
+  probes in `tests/MinigrafSharp.QualificationTests` plus
+  `docs/v2-qualification.md`. Reproduces and classifies the known v2.0.5
+  limitations (same-transaction multi-values #371, valid-time replacement
+  #435, old-graph/newer-WAL #535); confirms normal persistence, checkpoint,
+  process-kill recovery, truncation fail-closed, and temporal reads. No
+  public API change and no wrapper workarounds.

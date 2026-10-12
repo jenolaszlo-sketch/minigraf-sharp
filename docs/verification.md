@@ -282,3 +282,85 @@ WAL-mismatch qualification, known-v2-issue reproductions, repair/rebuild,
 backup semantics, prepared queries, transactions, open options, async
 APIs. No backup correctness is claimed; recovery qualification stays in
 M1d.
+
+---
+
+# M1d evidence
+
+RID `win-x64`, SDK 10.0.401, engine Minigraf `2.0.5` / minigraf-c `2.0.5`,
+file format `v7`. `src/` was not modified (`git diff <M1c> -- src/` empty);
+M1d adds only `tests/MinigrafSharp.QualificationTests` and documentation.
+No public API changed; the public-surface unit test still pins the same 15
+types.
+
+Qualification probes run the real engine and real filesystem. Destructive
+probes operate only under `%TEMP%/MinigrafSharp.Qualification/<guid>/`,
+guarded by a test-root assertion; recovery/corruption work happens in child
+processes, never in the runner. Every probe cleans its temp directory and
+surface cleanup failures. Results and classification:
+[v2-qualification.md](v2-qualification.md).
+
+## Build
+
+- `dotnet build MinigrafSharp.slnx -c Release`: succeeded, `net8.0` +
+  `net10.0` for all 5 projects, 0 warnings, 0 errors.
+
+## Qualification runner
+
+`dotnet run --project tests/MinigrafSharp.QualificationTests -c Release --no-build -f <tfm>`:
+
+- net8.0: 33/33 PASS, exit 0.
+- net10.0: 33/33 PASS, exit 0.
+
+Probes and observed results (`win-x64`):
+
+- Gate: Minigraf/minigraf-c are exactly `2.0.5` (read from
+  `native/upstream.json`).
+- Q1 same-tx multi-values (#371): same tx → 1 visible, split tx → 2,
+  checkpoint+reopen → 2 (rebuild restores). Asserted `1 -> 2`.
+- Q2 retract then re-assert: Datalog keeps the fact; the core
+  `WriteTransaction` issue is not reachable through minigraf-c.
+- Q3 valid-time overlap (#435): both windows visible; stable across
+  checkpoint.
+- Q10 temporal: window reads before/inside/after/any = 0/1/0/1;
+  `:as-of 1` = first-transaction view; fixture survives checkpoint/reopen.
+- Q4-control: checkpoint sequence without kill keeps A+B.
+- Q11/Q11b/Q11c: point lookups (`[?e :attr literal]`) and scans work
+  in-memory and after reopen (single- and multi-valued, string and
+  integer). An earlier apparent miss was a malformed probe (a `:find` var
+  never bound by the pattern); it was corrected, not reported as a bug.
+- Q13: normal close/reopen persists; Q13b: WAL present while open and
+  removed by close-time checkpoint on dispose.
+- Recursion: derives transitively (2 rows); rules are session-local
+  (0 rows without re-register, 2 after re-declaring).
+- Q8: 100 bytes of a valid 24576-byte file → `MinigrafOpenException`
+  (never a silent empty DB); all-zero 100-byte and zero-length files open
+  as new empty databases.
+- Q9: half-truncated WAL → opens; checkpointed generation visible,
+  uncheckpointed entry lost.
+- Q5 old-graph + newer-WAL (#535): accepted; newer WAL replays over the
+  restored graph. Fixture manifest (name/size/SHA-256) logged.
+- Q7 abrupt exit after returned write: 5/5 recovered.
+- Q4 abrupt exit during write/checkpoint loop: 5/5 reopen cleanly, prior
+  data survives, post-kill checkpoint never shrinks the fact set; kills
+  landed 78–279 iterations into the loop. No exact in-checkpoint crash
+  point is claimed.
+
+## Regression status
+
+- Unit `tests/MinigrafSharp.Tests`: net8/net10 PASS (unchanged).
+- Integration `tests/MinigrafSharp.IntegrationTests`: net8/net10 PASS.
+- QuickStart: net8/net10 print `Alice`.
+
+## Format
+
+- `dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore`
+  passes, exit 0.
+
+## Scope confirmation (M1d)
+
+Added: `tests/MinigrafSharp.QualificationTests` and documentation only.
+None of these were added: crash-recovery APIs, WAL-mismatch handling,
+known-v2-issue workarounds, repair/rebuild, backup semantics, prepared
+queries, explicit transactions, open options, async APIs. No public API
+changed.

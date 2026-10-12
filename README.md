@@ -6,16 +6,19 @@ an embedded single-file bi-temporal graph database with Datalog queries.
 > MinigrafSharp is an independent .NET binding for Minigraf and is not
 > currently an official Project Minigraf package.
 
-> Status: M1c (file persistence). The public API is
+> Status: M1d (v2.0.5 qualified). The public API is
 > `MinigrafDatabase.OpenMemory()` / `Open(string)` plus `ExecuteRaw(string)`
 > returning raw native JSON, `Execute(string)` returning typed
 > `MinigrafResult` values, and `Checkpoint()` for explicit WAL flushes,
-> against the pinned native engine. Crash/recovery qualification is still
-> deferred.
+> against the pinned native engine.
 > There is no NuGet package yet. See [docs/product-spec.md](docs/product-spec.md)
 > and [ROADMAP.md](ROADMAP.md).
 
-## Try it (M1c)
+> MinigrafSharp currently targets Minigraf 2.0.5. The upstream v2 storage
+> engine has known edge cases around specific transaction, temporal, and
+> crash/recovery scenarios. See [docs/v2-qualification.md](docs/v2-qualification.md).
+
+## Try it (M1d)
 
 Prerequisites: .NET 8 or .NET 10 SDK.
 
@@ -60,9 +63,10 @@ non-finite floats arrive as null; see
 
 Pinned baseline: Minigraf core `v2.0.5`, minigraf-c `v2.0.5`
 (see [native/upstream.json](native/upstream.json)).
-Verified platform for M1c: `win-x64` (including file persistence).
-Advanced crash/recovery qualification is deferred to M1d; no backup
-guarantees are claimed.
+Verified platform: `win-x64` (lifecycle, raw/typed execution, file
+persistence, storage/recovery/temporal qualification). No backup or
+crash-safety guarantees are claimed beyond the qualified observations in
+[docs/v2-qualification.md](docs/v2-qualification.md).
 
 ## Learn more
 
@@ -70,7 +74,8 @@ guarantees are claimed.
 - [Architecture](docs/architecture.md): managed/native boundary and ownership.
 - [Native boundary](docs/native-boundary.md): exact C ABI, provenance, loading.
 - [Compatibility](docs/compatibility.md): wrapper/core/C-binding matrix.
-- [Verification](docs/verification.md): executed M0–M1c evidence.
+- [v2.0.5 qualification](docs/v2-qualification.md): reliability boundary and known upstream limitations.
+- [Verification](docs/verification.md): executed M0–M1d evidence.
 - [Decision 0001](docs/decisions/0001-wrap-official-minigraf-c.md): why we wrap minigraf-c.
 - [ROADMAP.md](ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md).
 

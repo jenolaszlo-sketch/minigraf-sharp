@@ -8,9 +8,8 @@ completed items are marked complete.
   error capture, per-database gate)
 - [x] M1b - typed result decoding (`Execute`, result/row/value model, strict decoder)
 - [x] M1c - file-backed persistence (`Open(path)`, `Checkpoint`, close/reopen proof)
-- [ ] M1b - typed result decoding
-- [ ] M1c - `Open(path)` + `Checkpoint` + persistence/reopen
-- [ ] M1d - temporal/Datalog fixtures + concurrency/known-issue evidence
+- [x] M1d - storage/recovery/temporal qualification (reproduce, classify, document
+  known v2.0.5 limitations; no public API change)
 - [ ] M2 - distribution gate (verified native assets per qualified RID, NuGet
   package, hash verifier, clean consumer, .NET 8/10 matrix, trimming, NativeAOT smoke)
 - [ ] M2.5 - hardening (fault paths, stress, tamper tests, known-issue matrix,
