@@ -91,3 +91,22 @@ public sealed class MinigrafResultException : MinigrafException
     {
     }
 }
+
+/// <summary>
+/// A native checkpoint failed. The message is the diagnostic copied from
+/// <c>minigraf_last_error</c> at failure time, or a deterministic fallback.
+/// Checkpoint is storage maintenance, not Datalog execution, so this is
+/// distinct from <see cref="MinigrafExecutionException"/>.
+/// </summary>
+public sealed class MinigrafCheckpointException : MinigrafException
+{
+    public MinigrafCheckpointException(string message)
+        : base(message)
+    {
+    }
+
+    public MinigrafCheckpointException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}

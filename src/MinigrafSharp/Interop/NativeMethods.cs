@@ -5,8 +5,9 @@ using MinigrafSharp.Native;
 namespace MinigrafSharp.Interop;
 
 /// <summary>
-/// M0 lifecycle plus M1a raw-execution subset of the official minigraf-c ABI
-/// (<c>native/include/minigraf.h</c> at minigraf-c v2.0.5).
+/// M0 lifecycle plus M1a raw-execution plus M1c persistence subset of the
+/// official minigraf-c ABI (<c>native/include/minigraf.h</c> at minigraf-c
+/// v2.0.5).
 /// Source-generated, internal, Cdecl. Raw handles and pointers never leave
 /// this class: callers wrap a non-null database result in
 /// <see cref="Native.SafeMinigrafDatabaseHandle"/>, copy owned or borrowed
@@ -63,5 +64,27 @@ internal static partial class NativeMethods
         EntryPoint = "minigraf_last_error")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial nint MinigrafLastError(
+        SafeMinigrafDatabaseHandle handle);
+
+    // C ABI: MiniGrafDb *minigraf_open(const char *path);
+    // Path marshals as UTF-8, passed as supplied (no normalization).
+    // Returns NULL on error (null/invalid-UTF-8 path, engine open failure).
+    // No handle exists on failure, so no native diagnostic is retrievable.
+    // Ownership transfers to the caller on success.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "minigraf_open",
+        StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MinigrafOpen(string path);
+
+    // C ABI: int minigraf_checkpoint(MiniGrafDb *handle);
+    // The SafeHandle parameter keeps the database alive for the call.
+    // Returns 0 on success, -1 on error (diagnostic via minigraf_last_error).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "minigraf_checkpoint")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial int MinigrafCheckpoint(
         SafeMinigrafDatabaseHandle handle);
 }

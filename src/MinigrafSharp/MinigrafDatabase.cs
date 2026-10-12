@@ -41,6 +41,40 @@ public sealed class MinigrafDatabase : IDisposable
     }
 
     /// <summary>
+    /// Opens a file-backed Minigraf database at <paramref name="path"/>,
+    /// creating it when it does not exist. The path is passed to native
+    /// Minigraf as supplied (no trimming or normalization) using UTF-8.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is empty.</exception>
+    /// <exception cref="MinigrafNativeLoadException">The native library could not be loaded.</exception>
+    /// <exception cref="MinigrafOpenException">The native open returned NULL.</exception>
+    public static MinigrafDatabase Open(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (path.Length == 0)
+        {
+            throw new ArgumentException("Database path must not be empty.", nameof(path));
+        }
+
+        Native.NativeLoader.EnsureLoaded();
+        nint raw = Interop.NativeMethods.MinigrafOpen(path);
+        if (raw == nint.Zero)
+        {
+            // No handle exists on failure, so minigraf_last_error cannot be
+            // consulted: the message stays honest about the missing detail.
+            // The requested path is included: it is the one diagnostic the
+            // managed side actually has for a failed open.
+            throw new MinigrafOpenException(
+                $"minigraf_open returned NULL for '{path}'. " +
+                "minigraf-c v2.0.5 exposes no error handle for failed opens, " +
+                "so no further native diagnostic is available.");
+        }
+
+        return new MinigrafDatabase(new Native.SafeMinigrafDatabaseHandle(raw));
+    }
+
+    /// <summary>
     /// Executes one Datalog statement and returns the raw native JSON result
     /// as a managed string, byte-identical in content (no normalization).
     /// </summary>
@@ -88,6 +122,36 @@ public sealed class MinigrafDatabase : IDisposable
     {
         string json = ExecuteRaw(datalog);
         return MinigrafResultDecoder.Decode(json);
+    }
+
+    /// <summary>
+    /// Flushes the write-ahead log to the database file using the official
+    /// native checkpoint. Participates in the same per-database gate as
+    /// execution, so it cannot race sibling operations, disposal, or the
+    /// borrowed error capture below.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The database is disposed.</exception>
+    /// <exception cref="MinigrafCheckpointException">The native checkpoint reported failure.</exception>
+    public void Checkpoint()
+    {
+        lock (_sync)
+        {
+            ThrowIfDisposed();
+            Native.SafeMinigrafDatabaseHandle handle = _handle!;
+
+            int rc = Interop.NativeMethods.MinigrafCheckpoint(handle);
+            if (rc != 0)
+            {
+                nint errorPtr = Interop.NativeMethods.MinigrafLastError(handle);
+                string? message = Interop.NativeUtf8.ReadCString(errorPtr);
+                if (string.IsNullOrEmpty(message))
+                {
+                    message = "Minigraf checkpoint failed without a native diagnostic.";
+                }
+
+                throw new MinigrafCheckpointException(message);
+            }
+        }
     }
 
     /// <summary>
