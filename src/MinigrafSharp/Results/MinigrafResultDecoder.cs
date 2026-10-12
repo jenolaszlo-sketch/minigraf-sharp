@@ -120,14 +120,13 @@ internal static class MinigrafResultDecoder
         var names = new List<string>();
         foreach (JsonElement variable in variables.EnumerateArray())
         {
-            if (variable.ValueKind != JsonValueKind.String
-                || variable.GetString() is not string name)
+            if (variable.ValueKind != JsonValueKind.String)
             {
                 throw new MinigrafResultException(
                     "Native query variable names must be strings.");
             }
 
-            names.Add(name);
+            names.Add(ReadString(variable));
         }
 
         var rows = new List<MinigrafRow>();
@@ -158,7 +157,7 @@ internal static class MinigrafResultDecoder
     private static MinigrafValue DecodeValue(JsonElement cell) =>
         cell.ValueKind switch
         {
-            JsonValueKind.String => new MinigrafValue(cell.GetString()!),
+            JsonValueKind.String => new MinigrafValue(ReadString(cell)),
             JsonValueKind.Number => DecodeNumber(cell),
             JsonValueKind.True => new MinigrafValue(true),
             JsonValueKind.False => new MinigrafValue(false),
@@ -166,6 +165,28 @@ internal static class MinigrafResultDecoder
             _ => throw new MinigrafResultException(
                 "Native query values must be JSON scalars."),
         };
+
+    // The result boundary stays closed: System.Text.Json's reader can throw
+    // InvalidOperationException for string content it cannot transcode (for
+    // example an unpaired UTF-16 surrogate escape). Translate any such reader
+    // failure into MinigrafResultException rather than leaking a non-Minigraf
+    // exception to callers of Execute.
+    private static string ReadString(JsonElement element)
+    {
+        string? value;
+        try
+        {
+            value = element.GetString();
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new MinigrafResultException(
+                "Native result contains a string value that cannot be read.", ex);
+        }
+
+        return value ?? throw new MinigrafResultException(
+            "Native result contains a missing string value.");
+    }
 
     private static MinigrafValue DecodeNumber(JsonElement cell)
     {
