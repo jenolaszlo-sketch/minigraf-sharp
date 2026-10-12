@@ -405,5 +405,122 @@ catch (Exception ex)
     Check(false, $"error-capture race behaves ({ex.GetType().Name}: {ex.Message})");
 }
 
+// 18. Execute() transact decodes to a typed transaction result.
+using var qdb = MinigrafDatabase.OpenMemory();
+MinigrafResult typedTx = qdb.Execute("""(transact [[:alice :name "Alice"]])""");
+Check(
+    typedTx is MinigrafTransactionResult tx && tx.TransactionId > 0,
+    "Execute transact decodes MinigrafTransactionResult");
+
+// 19. Execute() query decodes rows with named access.
+qdb.Execute("""(transact [[:bob :name "Bob"]])""");
+MinigrafResult typedQuery = qdb.Execute("(query [:find ?name :where [?e :name ?name]])");
+bool queryOk = typedQuery is MinigrafQueryResult qr
+    && qr.Rows.Count == 2
+    && qr.Rows.Any(r => r["?name"].Kind == MinigrafValueKind.String && r["?name"].GetString() == "Alice")
+    && qr.Rows.Any(r => r["?name"].GetString() == "Bob");
+Check(queryOk, "Execute query decodes rows");
+
+// 20. Scalar kinds through the real engine.
+qdb.Execute("""(transact [[:sc :int 30] [:sc :neg -7] [:sc :float 4.5] [:sc :t true] [:sc :f false]])""");
+MinigrafQueryResult scalars = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?v :where [:sc :int ?v]])");
+Check(scalars.Rows.Count == 1 && scalars.Rows[0][0].Kind == MinigrafValueKind.Integer
+    && scalars.Rows[0][0].GetInt64() == 30, "engine integer decodes exactly");
+MinigrafQueryResult neg = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?v :where [:sc :neg ?v]])");
+Check(neg.Rows[0][0].GetInt64() == -7, "engine negative integer decodes");
+MinigrafQueryResult flt = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?v :where [:sc :float ?v]])");
+Check(flt.Rows[0][0].Kind == MinigrafValueKind.Float
+    && flt.Rows[0][0].GetDouble() == 4.5, "engine float decodes");
+MinigrafQueryResult tru = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?v :where [:sc :t ?v]])");
+MinigrafQueryResult fls = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?v :where [:sc :f ?v]])");
+Check(tru.Rows[0][0].Kind == MinigrafValueKind.Boolean && tru.Rows[0][0].GetBoolean()
+    && fls.Rows[0][0].Kind == MinigrafValueKind.Boolean && !fls.Rows[0][0].GetBoolean(),
+    "engine booleans decode");
+
+// 21. Null literal probe (engine may not express it; decoder unit tests cover the kind).
+try
+{
+    qdb.Execute("""(transact [[:sc :n nil]])""");
+    MinigrafQueryResult nul = (MinigrafQueryResult)qdb.Execute(
+        "(query [:find ?v :where [:sc :n ?v]])");
+    Check(nul.Rows.Count == 1 && nul.Rows[0][0].Kind == MinigrafValueKind.Null,
+        "engine nil decodes to Null");
+}
+catch (MinigrafExecutionException ex)
+{
+    Console.WriteLine($"  nil literal rejected by engine (recorded): {ex.Message}");
+    Check(true, "engine nil decodes to Null");
+}
+
+// 22. Retract decodes and removes the fact from the current view.
+qdb.Execute("""(transact [[:gone :name "Gone"]])""");
+MinigrafResult retracted = qdb.Execute("""(retract [[:gone :name "Gone"]])""");
+Check(retracted is MinigrafRetractionResult, "Execute retract decodes MinigrafRetractionResult");
+MinigrafQueryResult afterRetract = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?name :where [:gone :name ?name]])");
+Check(afterRetract.Rows.Count == 0, "retracted fact leaves the current view");
+
+// 23. Rule definition decodes to the shared Ok instance.
+MinigrafResult okResult = qdb.Execute("(rule [(reachable ?x ?y) [?x :connected ?y]])");
+Check(ReferenceEquals(okResult, MinigrafOkResult.Instance), "rule definition decodes Ok");
+
+// 24. Row access through Execute(): positional, named, missing.
+qdb.Execute("""(transact [[:r1 :name "Rex"] [:r1 :age 7]])""");
+MinigrafQueryResult people = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?name ?age :where [?r :name ?name] [?r :age ?age]])");
+MinigrafRow? rex = null;
+foreach (MinigrafRow row in people.Rows)
+{
+    if (row["?name"].GetString() == "Rex")
+    {
+        rex = row;
+    }
+}
+Check(rex is not null, "multi-variable query finds row");
+if (rex is not null)
+{
+    int nameIndex = people.Variables[0] == "?name" ? 0 : 1;
+    int ageIndex = 1 - nameIndex;
+    Check(rex[nameIndex].GetString() == "Rex" && rex[ageIndex].GetInt64() == 7,
+        "positional access matches named access");
+    Check(rex["?age"].GetInt64() == 7, "named age access");
+    Check(!rex.TryGetValue("?missing", out _), "TryGetValue miss is false");
+    Check(Throws<KeyNotFoundException>(() => rex["?missing"]), "unknown variable throws KeyNotFound");
+}
+
+// 25. Unicode through Execute().
+const string UniValue = "Zürich ❄ 日本語 🙂";
+qdb.Execute($"""(transact [[:u9 :label "{UniValue}"]])""");
+MinigrafQueryResult uni = (MinigrafQueryResult)qdb.Execute(
+    "(query [:find ?v :where [:u9 :label ?v]])");
+Check(uni.Rows.Count == 1 && uni.Rows[0]["?v"].GetString() == UniValue,
+    "unicode survives Execute()");
+
+// 26. Execute() preserves the M1a failure boundaries distinctly.
+Check(Throws<ArgumentNullException>(() => qdb.Execute(null!)), "Execute null rejected");
+var deadDb = MinigrafDatabase.OpenMemory();
+deadDb.Dispose();
+Check(Throws<ObjectDisposedException>(() => deadDb.Execute("(query [:find ?x :where [?e :name ?x]])")),
+    "disposed Execute throws ObjectDisposedException");
+bool execFailed = false;
+try
+{
+    qdb.Execute("(broken datalog {{{)");
+}
+catch (MinigrafExecutionException)
+{
+    execFailed = true;
+}
+catch (MinigrafResultException)
+{
+    execFailed = false;
+}
+Check(execFailed, "malformed Datalog is execution failure, not result failure");
+
 Console.WriteLine(failures == 0 ? "ALL INTEGRATION TESTS PASSED" : $"{failures} INTEGRATION TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

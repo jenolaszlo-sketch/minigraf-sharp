@@ -2,7 +2,11 @@ using MinigrafSharp;
 
 using var db = MinigrafDatabase.OpenMemory();
 
-string result = db.ExecuteRaw(
+db.Execute(
     """(transact [[:alice :name "Alice"]])""");
 
-Console.WriteLine(result);
+var result = (MinigrafQueryResult)db.Execute(
+    """(query [:find ?name :where [?e :name ?name]])""");
+
+Console.WriteLine(
+    result.Rows[0]["?name"].GetString());
