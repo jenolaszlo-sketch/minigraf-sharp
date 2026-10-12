@@ -359,3 +359,6 @@ finally {
 }
 
 Write-Output "Packaged-consumer test passed ($TargetFramework)."
+# The intended-failure probes (missing/override) leave a non-zero $LASTEXITCODE;
+# exit explicitly so a fully successful run reports success.
+exit 0

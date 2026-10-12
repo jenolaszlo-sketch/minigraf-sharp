@@ -61,3 +61,4 @@ try {
 finally { Pop-Location }
 
 Write-Output "Distribution gate passed ($Rid)."
+exit 0
