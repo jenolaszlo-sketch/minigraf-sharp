@@ -6,7 +6,7 @@ an embedded single-file bi-temporal graph database with Datalog queries.
 > MinigrafSharp is an independent .NET binding for Minigraf and is not
 > currently an official Project Minigraf package.
 
-> Status: M2 (packaged). A release-ready NuGet preview is built and
+> Status: M2.5 (preview release candidate `0.1.0-preview.2`). Hardened and
 > qualified for `win-x64` (`net8.0`/`net10.0`, NativeAOT and trimming
 > verified). The public API is `MinigrafDatabase.OpenMemory()` /
 > `Open(string)` plus `ExecuteRaw(string)` returning raw native JSON,
@@ -94,7 +94,8 @@ qualified observations in [docs/v2-qualification.md](docs/v2-qualification.md).
 - [Native boundary](docs/native-boundary.md): exact C ABI, provenance, loading.
 - [Compatibility](docs/compatibility.md): RID status, wrapper/core matrix.
 - [v2.0.5 qualification](docs/v2-qualification.md): reliability boundary and known upstream limitations.
-- [Verification](docs/verification.md): executed M0–M2 evidence.
+- [Hardening](docs/hardening.md): stress, loader/tamper matrices, privacy, release decision.
+- [Verification](docs/verification.md): executed M0–M2.5 evidence.
 - [Decision 0001](docs/decisions/0001-wrap-official-minigraf-c.md): why we wrap minigraf-c.
 - [ROADMAP.md](ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md).
 

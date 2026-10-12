@@ -9,7 +9,7 @@ boundaries live in [v2-qualification.md](v2-qualification.md).
 | Field | Value |
 | --- | --- |
 | PackageId | `MinigrafSharp` |
-| Version | `0.1.0-preview.1` (preview line; not a stable release) |
+| Version | `0.1.0-preview.2` (preview line; not a stable release) |
 | TFMs | `net8.0`, `net10.0` |
 | License | Apache-2.0 |
 | Managed runtime dependencies | none |
@@ -80,7 +80,8 @@ temp directories outside the repository.
 | Script | Purpose |
 | --- | --- |
 | `Get-Native.ps1` | Fetch and hash-verify the pinned native asset per RID. |
-| `Verify-Package.ps1` | Inspect the `.nupkg`: TFMs, RID set, native hashes vs metadata, identity, legal files, no forbidden payload. |
+| `Verify-Package.ps1` | Inspect the `.nupkg`: TFMs, RID set, native hashes vs metadata, identity, legal files, no duplicate entries, no forbidden payload. |
+| `Test-PackageVerifier.ps1` | Tamper matrix: build tampered packages, assert the verifier rejects each, control passes. |
 | `Test-PackageConsumer.ps1` | Clean external consumer per TFM: install, build, run in-memory + file-backed, assert override absent, and assert fail-closed when the native asset is missing. |
 | `Test-AotConsumer.ps1` | NativeAOT publish + execute of `samples/MinigrafSharp.AotSmoke` outside the repo. |
 | `Test-TrimmedConsumer.ps1` | Trimmed publish + execute. |

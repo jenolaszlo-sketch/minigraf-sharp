@@ -42,3 +42,13 @@ package and never copy the upstream Minigraf version number.
   `samples/MinigrafSharp.AotSmoke` sample. `win-x64` is the only packaged
   and qualified RID; other RIDs stay deferred. No public API change; no
   NuGet.org publication.
+- M2.5 hardening (`docs/hardening.md`): malformed/hostile result corpus,
+  bounded fuzz, strict UTF-8 negatives, execute/lifecycle/persistence stress,
+  independent- and same-handle concurrency, dispose race, native loader
+  negative matrix, PATH/cwd contamination, override matrix, package tamper
+  self-test, privacy and legal inventory review. Fixed one fail-closed defect:
+  the result decoder now translates `JsonElement.GetString()` reader failures
+  (e.g. an unpaired surrogate escape) into `MinigrafResultException` instead
+  of leaking `InvalidOperationException`. That content change invalidated
+  `0.1.0-preview.1`; the corrected release candidate is `0.1.0-preview.2`,
+  requalified end to end. No public API change; no NuGet.org publication.

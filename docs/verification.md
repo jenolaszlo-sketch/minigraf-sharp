@@ -444,3 +444,77 @@ Packaged `win-x64` only (the only RID qualified by execution). Added
 (not in the solution; consumes the package), and packaging metadata. No new
 database feature API. No NuGet.org publication, no release tag, no
 Minigraf v3, no M2.5 work.
+
+---
+
+# M2.5 evidence
+
+Baseline `d56e021`. RID `win-x64`, SDK 10.0.401, Minigraf/minigraf-c
+`2.0.5`. Summary and matrices: [hardening.md](hardening.md).
+
+## M2 candidate identity (captured before M2.5 work)
+
+```text
+file:      artifacts/packages/MinigrafSharp.0.1.0-preview.1.nupkg
+sha256:    595FCB14E10FB9A10F03689F2CC7C4662F8BD9999E74D69C621F437D0D9680DE
+size:      910573
+managed:   lib/net8.0 5F0280AB43B9093AA8F0CA6FDD1F105556D179DC4BA17DFEA630A9F423A42F80
+           lib/net10.0 0B488A366F07183236F5C49F23653C9CA30634A37D0E5B6E4647B8B22A97A747
+native:    runtimes/win-x64/native/minigraf.dll C534DD26CAC77C4F505E510F9C9D647923796494D86C5B82EF2BC7609B4E21BC
+```
+
+This candidate was **invalidated**: M2.5 reproduced a fail-closed defect in
+the result decoder (a lone UTF-16 surrogate escape surfaced
+`InvalidOperationException` instead of `MinigrafResultException`). The fix is
+in `src/MinigrafSharp/Results/MinigrafResultDecoder.cs`; the corrected
+candidate is `0.1.0-preview.2`. `src/` is otherwise unchanged from `d56e021`.
+
+## Production diff
+
+```text
+git diff d56e021 -- src/
+- MinigrafSharp.csproj: <Version> 0.1.0-preview.1 -> 0.1.0-preview.2 (packaging identity)
+- Results/MinigrafResultDecoder.cs: route string reads through a helper that
+  translates JsonElement.GetString() reader failures into MinigrafResultException
+```
+
+The csproj `<Version>` change is intrinsic to any content change; the decoder
+change is the reproduced defect fix. No public API changed (the surface test
+still pins the same 15 types; API inventory 46 members, sha256
+`7D299F8EB11A1EDA218BA8DFA0E24033AEC824DBCE9A47CC9E4093003A7277D2`).
+
+## Hardening results
+
+- Unit runner (net8/net10): hostile corpus 34/34 rejected; edge corpus
+  predictable (no unexpected exception types); bounded fuzz 500 inputs, 0
+  unexpected; large 1×5000 and 5×500 and 250k-string decode; 9 UTF-8 helper
+  negative/positive checks; result-privacy sentinel absent from
+  `MinigrafResultException`.
+- Integration runner (net8/net10): loader matrix 6/6 fail closed;
+  alternation 300/300; execute soak 10,000 mixed ops (8000/2000); lifecycle
+  5,000 cycles with bounded handle delta; persistence 200 accumulate/reopen
+  cycles; 8 independent DBs isolated; same-handle 600 ok / 600 diagnosed / 0
+  unexpected; dispose race 20 rounds, 0 unsafe; execution-error sentinel
+  echoed = false.
+- Qualification runner (net8/net10): unchanged, still 33/33.
+
+## Package (corrected candidate `0.1.0-preview.2`)
+
+- `eng/Verify-Package.ps1`: PASS (incl. new duplicate-entry check).
+- `eng/Test-PackageVerifier.ps1`: control PASS; 10/10 tamper variants rejected.
+- `eng/Test-PackageConsumer.ps1`: net8 + net10 install/build/deploy/output;
+  missing-native fail-closed; PATH rogue ignored; cwd rogue ignored; override
+  valid/nonexistent/corrupt/wrong-arch as documented.
+- `eng/Test-AotConsumer.ps1`: net10 NativeAOT publish + run, 0 warnings,
+  native deployed, plus missing-native negative fail-closed.
+- `eng/Test-TrimmedConsumer.ps1`: net10 trimmed publish + run, 0 warnings.
+
+## Privacy, legal, inventory
+
+- No automatic logging; `MinigrafResultException` retains no raw JSON.
+- Package inventory clean (no unexpected content); native depends only on
+  OS/CRT libraries; nuspec metadata correct with zero managed dependencies.
+
+## Preview release decision
+
+`PREVIEW RELEASE READY` (see the M2.5 final report). No publication performed.

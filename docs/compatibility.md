@@ -5,7 +5,7 @@
 | Minigraf core | `v2.0.5` (`a861e55`) |
 | minigraf-c | `v2.0.5` (`8422f9f`) |
 | C header | `native/include/minigraf.h`, SHA-256 `8603C074…ADE7D` |
-| MinigrafSharp | `0.1.0-preview.1` |
+| MinigrafSharp | `0.1.0-preview.2` (M2.5 release candidate) |
 | Managed TFMs | `net8.0`, `net10.0` |
 | Packaged + qualified RID | `win-x64` (lifecycle, raw/typed execution, file persistence, storage/recovery/temporal qualification) |
 | Upstream file format | v7 (`src/storage/mod.rs`: `FORMAT_VERSION = 7`) |
