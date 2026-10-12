@@ -215,3 +215,70 @@ into logs). None of these were added: `Checkpoint()`, `Open(path)`,
 persistence, prepared queries, transactions, open options, async APIs.
 `Ref`/`Keyword` decode as String and non-finite floats as Null, documented
 as inherited C-boundary limits.
+
+---
+
+# M1c evidence
+
+Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged.
+Native additions limited to `minigraf_open` and `minigraf_checkpoint`
+(no existing signature touched); checkpoint contract verified from pinned
+`minigraf-c/src/lib.rs` (0 = success and clears error, −1 = error with
+retrievable text; open failure yields no handle and therefore no native
+diagnostic).
+
+## Build
+
+- `dotnet build MinigrafSharp.slnx -c Release`: succeeded, `net8.0` +
+  `net10.0` for all 4 projects, 0 warnings, 0 errors.
+
+## Unit tests (no native)
+
+`dotnet run --project tests/MinigrafSharp.Tests -c Release --no-build -f <tfm>`:
+
+- net8.0: 70/70 PASS, exit 0.
+- net10.0: 70/70 PASS, exit 0.
+- 68 retained checks (surface test now pins 15 types, adds
+  `MinigrafCheckpointException`) plus `Open(null)` and `Open("")`
+  argument validation.
+
+## Integration tests (real engine + real filesystem)
+
+`dotnet run --project tests/MinigrafSharp.IntegrationTests -c Release --no-build -f <tfm>`:
+
+- net8.0: 62/62 PASS, exit 0.
+- net10.0: 62/62 PASS, exit 0.
+- All M0/M1a/M1b checks retained (one pre-existing duplicated assertion
+  removed). New persistence checks, each in an isolated temp directory
+  with cleanup that surfaces locked-file failures: new-file creation
+  (files observed beside the path: `new.db`); file-backed `Execute` and
+  `ExecuteRaw`; write→checkpoint→close→reopen→read; close without
+  checkpoint still persists via WAL replay on open (observed normal-close
+  behavior, no crash guarantee claimed); mid-session checkpoint plus
+  post-reopen read; two reopen cycles accumulating A then A+B; empty
+  database reopen with empty results; `minigraf-Žluťoučký-日本語.db`
+  path round-trip; missing parent and directory-as-path both fail with
+  `MinigrafOpenException`; second open of an open file is rejected
+  (first handle stays usable; no wrapper path lock added);
+  `Checkpoint()` after dispose throws `ObjectDisposedException`;
+  `Checkpoint()` on an in-memory database succeeds and the database
+  stays usable; disposed databases release files (all temp dirs deleted).
+
+## QuickStart
+
+- Unchanged in-memory sample; net8.0 and net10.0 print `Alice`, exit 0.
+
+## Format
+
+- `dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore`
+  passes, exit 0.
+
+## Scope confirmation (M1c)
+
+Added: `Open(string)`, `Checkpoint()`,
+`MinigrafCheckpointException`, internal `minigraf_open` /
+`minigraf_checkpoint` bindings. None of these were added: crash recovery,
+WAL-mismatch qualification, known-v2-issue reproductions, repair/rebuild,
+backup semantics, prepared queries, transactions, open options, async
+APIs. No backup correctness is claimed; recovery qualification stays in
+M1d.

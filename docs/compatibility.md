@@ -1,4 +1,4 @@
-# Compatibility (M0)
+# Compatibility (M1c)
 
 | Layer | Pinned |
 | --- | --- |
@@ -7,7 +7,8 @@
 | C header | `native/include/minigraf.h`, SHA-256 `8603C074…ADE7D` |
 | MinigrafSharp | `0.1.0-preview` line (unreleased) |
 | Managed TFMs | `net8.0`, `net10.0` |
-| Qualified RID (M0) | `win-x64` |
+| Qualified RID (M1c) | `win-x64` (lifecycle, raw/typed execution, file persistence) |
+| Upstream file format | v7 per the v2.0.5 release notes (recorded, not probed: M1c parses no file internals) |
 
 Recorded-but-unqualified RIDs: `linux-x64`, `linux-arm64`, `osx-x64`,
 `osx-arm64` (assets hashed in `native/upstream.json`, gates pending).

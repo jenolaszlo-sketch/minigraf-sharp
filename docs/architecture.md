@@ -1,4 +1,4 @@
-# Architecture (M1b)
+# Architecture (M1c)
 
 ```text
 consumer
@@ -74,6 +74,27 @@ reimplemented ownership. The decoder retains no `JsonDocument` and never
 exposes `JsonElement`; rows and variable lists are immutable snapshots.
 Malformed or ambiguous native results fail with `MinigrafResultException`,
 distinct from `MinigrafExecutionException` (engine rejected the call).
+
+## Persistent lifecycle (M1c)
+
+```text
+Open(path)
+   |
+SafeHandle (same handle type as OpenMemory)
+   |
+Minigraf file (+ WAL beside it)
+   |
+Execute / ExecuteRaw (unchanged)
+   |
+Checkpoint (explicit WAL flush, same per-database gate)
+   |
+Dispose / Reopen (same committed state observable)
+```
+
+File-backed and in-memory databases share one class, one handle type, one
+gate, and one close path. Crash recovery, WAL-mismatch, and known v2
+storage-issue qualification are deferred to M1d; M1c proves only
+normal-close persistence.
 
 - No native handles are exposed publicly (`docs` unit test
   `no IntPtr/SafeHandle in public signatures` enforces this).

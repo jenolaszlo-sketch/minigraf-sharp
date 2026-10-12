@@ -23,3 +23,8 @@ package and never copy the upstream Minigraf version number.
   `MinigrafRetractionResult`, `MinigrafOkResult`, `MinigrafQueryResult` with
   `MinigrafRow`/`MinigrafValue`), failing closed with
   `MinigrafResultException` on malformed shapes.
+- M1c file-backed persistence: `MinigrafDatabase.Open(string)` (UTF-8 path
+  as supplied, honest `MinigrafOpenException` without a fake native
+  diagnostic) and `Checkpoint()` (verified 0/−1 contract, same
+  per-database gate, `MinigrafCheckpointException`), with close/reopen
+  proof on `win-x64`. Recovery qualification remains deferred.

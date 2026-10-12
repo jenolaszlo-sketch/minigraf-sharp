@@ -1,4 +1,4 @@
-# Native boundary (M1b)
+# Native boundary (M1c)
 
 Pinned baseline: Minigraf core `v2.0.5`
 (`a861e551162623c8f4752f94daf5b637543f8358`), minigraf-c `v2.0.5`
@@ -35,6 +35,41 @@ M1a additionally binds, exactly matching the pinned header:
   itself be NULL (deterministic fallback message, never success).
 
 `Checkpoint` is not bound (M1c owns it).
+
+## File open (M1c)
+
+```c
+MiniGrafDb *minigraf_open(const char *path);
+```
+
+Verified against pinned `minigraf-c/src/lib.rs`: null path → NULL,
+invalid-UTF-8 path → NULL, engine open failure → NULL. The path is passed
+as supplied (no managed trimming or normalization) with UTF-8 marshalling.
+On failure no handle exists, so `minigraf_last_error` cannot be consulted;
+the managed `MinigrafOpenException` names the requested path and states
+that no further native diagnostic exists. Success transfers ownership into
+the same `SafeHandle`/close path as in-memory databases.
+
+Observed on `win-x64`: opening an existing open database file a second
+time is rejected (second `minigraf_open` returns NULL → managed
+`MinigrafOpenException`); the first handle stays usable. The wrapper adds
+no process-global path lock and no multi-writer policy — this observation
+is recorded, not enforced.
+
+## Checkpoint (M1c)
+
+```c
+int minigraf_checkpoint(MiniGrafDb *handle);
+```
+
+Verified return contract (pinned source): `0` on success (clears the
+handle error), `-1` on error (sets retrievable error text). The managed
+`Checkpoint()` runs under the same per-database gate, so a `-1` is
+followed immediately by the borrowed `minigraf_last_error` copy (never
+freed) before any sibling call can disturb it; failure becomes
+`MinigrafCheckpointException`, never an execution or result error.
+Checkpoint on an in-memory database succeeds (observed); checkpoint after
+dispose throws `ObjectDisposedException` without reaching native code.
 
 ## Typed decoding happens after the boundary (M1b)
 
@@ -84,7 +119,7 @@ architecture, expected filename, probed locations and pinned versions.
 Interop is source-generated `LibraryImport` (Cdecl) with a deterministic
 `DllImportResolver` returning the pre-loaded handle.
 
-## Supported RID (M1b)
+## Supported RID (M1c)
 
 `win-x64` only (`minigraf.dll`, staged by `eng/Get-Native.ps1`, ignored by
 git). Upstream also publishes `linux-x64`, `linux-arm64` and macOS

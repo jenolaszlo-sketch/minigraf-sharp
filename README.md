@@ -6,14 +6,16 @@ an embedded single-file bi-temporal graph database with Datalog queries.
 > MinigrafSharp is an independent .NET binding for Minigraf and is not
 > currently an official Project Minigraf package.
 
-> Status: M1b (typed results). The public API is
-> `MinigrafDatabase.OpenMemory()` plus `ExecuteRaw(string)` returning raw
-> native JSON and `Execute(string)` returning typed `MinigrafResult` values
-> against the pinned native engine.
+> Status: M1c (file persistence). The public API is
+> `MinigrafDatabase.OpenMemory()` / `Open(string)` plus `ExecuteRaw(string)`
+> returning raw native JSON, `Execute(string)` returning typed
+> `MinigrafResult` values, and `Checkpoint()` for explicit WAL flushes,
+> against the pinned native engine. Crash/recovery qualification is still
+> deferred.
 > There is no NuGet package yet. See [docs/product-spec.md](docs/product-spec.md)
 > and [ROADMAP.md](ROADMAP.md).
 
-## Try it (M1b)
+## Try it (M1c)
 
 Prerequisites: .NET 8 or .NET 10 SDK.
 
@@ -41,6 +43,15 @@ Console.WriteLine(result.Rows[0]["?name"].GetString());
 // Raw escape hatch: exact native JSON, no decoding.
 string raw = db.ExecuteRaw(
     """(query [:find ?name :where [?e :name ?name]])""");
+
+// File-backed use with an explicit checkpoint.
+using (var fileDb = MinigrafDatabase.Open("example.minigraf"))
+{
+    fileDb.Execute(
+        """(transact [[:alice :name "Alice"]])""");
+
+    fileDb.Checkpoint();
+}
 ```
 
 Native refs and keywords arrive as strings at this boundary, and
@@ -49,7 +60,9 @@ non-finite floats arrive as null; see
 
 Pinned baseline: Minigraf core `v2.0.5`, minigraf-c `v2.0.5`
 (see [native/upstream.json](native/upstream.json)).
-Verified platform for M1b: `win-x64`.
+Verified platform for M1c: `win-x64` (including file persistence).
+Advanced crash/recovery qualification is deferred to M1d; no backup
+guarantees are claimed.
 
 ## Learn more
 
@@ -57,7 +70,7 @@ Verified platform for M1b: `win-x64`.
 - [Architecture](docs/architecture.md): managed/native boundary and ownership.
 - [Native boundary](docs/native-boundary.md): exact C ABI, provenance, loading.
 - [Compatibility](docs/compatibility.md): wrapper/core/C-binding matrix.
-- [Verification](docs/verification.md): executed M0/M1a/M1b evidence.
+- [Verification](docs/verification.md): executed M0–M1c evidence.
 - [Decision 0001](docs/decisions/0001-wrap-official-minigraf-c.md): why we wrap minigraf-c.
 - [ROADMAP.md](ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md).
 
