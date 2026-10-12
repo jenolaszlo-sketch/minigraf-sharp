@@ -6,26 +6,44 @@ an embedded single-file bi-temporal graph database with Datalog queries.
 > MinigrafSharp is an independent .NET binding for Minigraf and is not
 > currently an official Project Minigraf package.
 
-> Status: M1d (v2.0.5 qualified). The public API is
-> `MinigrafDatabase.OpenMemory()` / `Open(string)` plus `ExecuteRaw(string)`
-> returning raw native JSON, `Execute(string)` returning typed
-> `MinigrafResult` values, and `Checkpoint()` for explicit WAL flushes,
-> against the pinned native engine.
-> There is no NuGet package yet. See [docs/product-spec.md](docs/product-spec.md)
-> and [ROADMAP.md](ROADMAP.md).
+> Status: M2 (packaged). A release-ready NuGet preview is built and
+> qualified for `win-x64` (`net8.0`/`net10.0`, NativeAOT and trimming
+> verified). The public API is `MinigrafDatabase.OpenMemory()` /
+> `Open(string)` plus `ExecuteRaw(string)` returning raw native JSON,
+> `Execute(string)` returning typed `MinigrafResult` values, and
+> `Checkpoint()` for explicit WAL flushes, against the pinned native engine.
+> The package is not yet on NuGet.org; other RIDs are not yet qualified.
+> See [docs/product-spec.md](docs/product-spec.md) and [ROADMAP.md](ROADMAP.md).
 
 > MinigrafSharp currently targets Minigraf 2.0.5. The upstream v2 storage
 > engine has known edge cases around specific transaction, temporal, and
 > crash/recovery scenarios. See [docs/v2-qualification.md](docs/v2-qualification.md).
 
-## Try it (M1d)
+## Install
+
+When published, install with no native setup, Rust, or environment
+variables:
+
+```sh
+dotnet add package MinigrafSharp
+```
+
+Until then, build the preview package locally (see
+[docs/packaging.md](docs/packaging.md)):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File eng/Get-Native.ps1 -Rid win-x64
+dotnet pack src/MinigrafSharp/MinigrafSharp.csproj `
+  -c Release -p:MinigrafSharpEnablePack=true -o artifacts/packages
+```
+
+## Try it
 
 Prerequisites: .NET 8 or .NET 10 SDK.
 
 ```powershell
-# Fetch and verify the pinned native asset for this machine (win-x64).
-pwsh eng/Get-Native.ps1
-
+# From a repository checkout: fetch the pinned native asset, then run.
+powershell -NoProfile -ExecutionPolicy Bypass -File eng/Get-Native.ps1
 dotnet build MinigrafSharp.slnx -c Release
 dotnet run --project samples/MinigrafSharp.QuickStart -c Release -f net10.0
 ```
@@ -63,19 +81,20 @@ non-finite floats arrive as null; see
 
 Pinned baseline: Minigraf core `v2.0.5`, minigraf-c `v2.0.5`
 (see [native/upstream.json](native/upstream.json)).
-Verified platform: `win-x64` (lifecycle, raw/typed execution, file
-persistence, storage/recovery/temporal qualification). No backup or
-crash-safety guarantees are claimed beyond the qualified observations in
-[docs/v2-qualification.md](docs/v2-qualification.md).
+Qualified and packaged platform: `win-x64` (lifecycle, raw/typed execution,
+file persistence, storage/recovery/temporal qualification, NativeAOT,
+trimming). No backup or crash-safety guarantees are claimed beyond the
+qualified observations in [docs/v2-qualification.md](docs/v2-qualification.md).
 
 ## Learn more
 
 - [Product spec](docs/product-spec.md): goals, non-goals, milestones.
+- [Packaging](docs/packaging.md): package layout, RID support, provenance, verifiers.
 - [Architecture](docs/architecture.md): managed/native boundary and ownership.
 - [Native boundary](docs/native-boundary.md): exact C ABI, provenance, loading.
-- [Compatibility](docs/compatibility.md): wrapper/core/C-binding matrix.
+- [Compatibility](docs/compatibility.md): RID status, wrapper/core matrix.
 - [v2.0.5 qualification](docs/v2-qualification.md): reliability boundary and known upstream limitations.
-- [Verification](docs/verification.md): executed M0–M1d evidence.
+- [Verification](docs/verification.md): executed M0–M2 evidence.
 - [Decision 0001](docs/decisions/0001-wrap-official-minigraf-c.md): why we wrap minigraf-c.
 - [ROADMAP.md](ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md).
 

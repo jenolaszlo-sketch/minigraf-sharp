@@ -10,8 +10,9 @@ completed items are marked complete.
 - [x] M1c - file-backed persistence (`Open(path)`, `Checkpoint`, close/reopen proof)
 - [x] M1d - storage/recovery/temporal qualification (reproduce, classify, document
   known v2.0.5 limitations; no public API change)
-- [ ] M2 - distribution gate (verified native assets per qualified RID, NuGet
-  package, hash verifier, clean consumer, .NET 8/10 matrix, trimming, NativeAOT smoke)
+- [x] M2 - distribution gate (NuGet preview package for the qualified `win-x64`
+  RID, hash verifier, clean consumers on net8/net10, NativeAOT, trimming,
+  package tamper/wrong-arch diagnostics). Other RIDs remain unqualified.
 - [ ] M2.5 - hardening (fault paths, stress, tamper tests, known-issue matrix,
   cross-binding fixtures, API freeze)
 - [ ] M3 - richer native surface (prepared queries, write transactions, open

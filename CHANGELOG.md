@@ -35,3 +35,10 @@ package and never copy the upstream Minigraf version number.
   #435, old-graph/newer-WAL #535); confirms normal persistence, checkpoint,
   process-kill recovery, truncation fail-closed, and temporal reads. No
   public API change and no wrapper workarounds.
+- M2 distribution: `MinigrafSharp` `0.1.0-preview.1` NuGet package
+  (`net8.0`/`net10.0` + `runtimes/win-x64/native/minigraf.dll`, no managed
+  dependencies), with `eng/Verify-Package.ps1`, `eng/Test-PackageConsumer.ps1`,
+  `eng/Test-AotConsumer.ps1`, `eng/Test-TrimmedConsumer.ps1`, and an
+  `samples/MinigrafSharp.AotSmoke` sample. `win-x64` is the only packaged
+  and qualified RID; other RIDs stay deferred. No public API change; no
+  NuGet.org publication.

@@ -364,3 +364,83 @@ None of these were added: crash-recovery APIs, WAL-mismatch handling,
 known-v2-issue workarounds, repair/rebuild, backup semantics, prepared
 queries, explicit transactions, open options, async APIs. No public API
 changed.
+
+---
+
+# M2 evidence
+
+RID `win-x64`, SDK 10.0.401, engine Minigraf `2.0.5` / minigraf-c `2.0.5`.
+Package `MinigrafSharp 0.1.0-preview.1`, built from the same staged
+`minigraf.dll` (SHA-256 `C534DD26…E21BC`) that qualification used.
+`src/` code changed: none. The only `src/` change is packaging metadata in
+`MinigrafSharp.csproj` (PackageId/Version/metadata, opt-in `IsPackable`,
+native `<None>` pack items, and a pack-time asset-requirement target). No
+`.cs` file changed; the public-surface unit test still pins the same 15
+types.
+
+## Package
+
+- Built: `dotnet pack src/MinigrafSharp/MinigrafSharp.csproj -c Release
+  -p:MinigrafSharpEnablePack=true -o artifacts/packages` →
+  `artifacts/packages/MinigrafSharp.0.1.0-preview.1.nupkg` (910,573 bytes).
+- Contents: `lib/net8.0|net10.0/MinigrafSharp.dll` (+ xml),
+  `runtimes/win-x64/native/minigraf.dll`, `LICENSE`, `NOTICE`, `README.md`,
+  nuspec. No forbidden payload.
+- nuspec: id `MinigrafSharp`, version `0.1.0-preview.1`, license
+  Apache-2.0, repository url + commit, zero external managed dependencies.
+
+## Package verifier
+
+`eng/Verify-Package.ps1` → PACKAGE VERIFICATION PASSED (exit 0). Checks
+TFMs, RID set, native SHA-256 vs `native/upstream.json`, identity, legal
+files, dependency-free, and forbidden payload.
+
+Tamper proof: a copy of the package with one byte flipped in the packaged
+`minigraf.dll` fails with exactly `win-x64 native SHA-256 matches pinned
+metadata` → verifier exit 1, all other checks still passing.
+
+## Clean consumer (`eng/Test-PackageConsumer.ps1`)
+
+- net8.0 and net10.0: PASS — install from local feed, build, deployed
+  native hash matches pinned metadata, `override=absent` at runtime, and
+  in-memory + file-backed (checkpoint/reopen) output `Alice`/`Bob`.
+- Negative: with the deployed native asset removed, the consumer exits
+  non-zero with `MinigrafNativeLoadException` naming RID, filename and
+  probed locations.
+- Isolation confirmed: `MINIGRAFSHARP_NATIVE_PATH` absent, consumer under
+  the OS temp root outside the repository, no `ProjectReference`, isolated
+  `NUGET_PACKAGES`.
+
+## NativeAOT (`eng/Test-AotConsumer.ps1`)
+
+- win-x64 / net10.0 (`samples/MinigrafSharp.AotSmoke` copied outside the
+  repo): PASS — publish succeeded, 0 trim/AOT analysis warnings, native
+  asset deployed beside the executable, execution output `override=absent`
+  + `Alice`.
+
+## Trimming (`eng/Test-TrimmedConsumer.ps1`)
+
+- win-x64 / net10.0: PASS — publish succeeded, 0 trim-analysis warnings,
+  native asset deployed, execution output `override=absent` + `Alice`.
+
+## Wrong-architecture diagnostic
+
+Loading the pinned Linux `libminigraf.so` under the Windows filename via
+`MINIGRAFSHARP_NATIVE_PATH` fails with `MinigrafNativeLoadException`
+(RID, architecture, filename, probed locations) wrapping
+`BadImageFormatException` — no crash, no fallback.
+
+## Regression at M2
+
+- Build: 5 projects, net8 + net10, 0 warnings / 0 errors.
+- Unit: 70/70 net8 and net10. Integration: 62/62 net8 and net10.
+  Qualification: 33/33 net8 and net10. QuickStart: `Alice` net8 and net10.
+- `dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore`: exit 0.
+
+## Scope confirmation (M2)
+
+Packaged `win-x64` only (the only RID qualified by execution). Added
+`docs/packaging.md`, three `eng/` verifiers, `samples/MinigrafSharp.AotSmoke`
+(not in the solution; consumes the package), and packaging metadata. No new
+database feature API. No NuGet.org publication, no release tag, no
+Minigraf v3, no M2.5 work.

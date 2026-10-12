@@ -1,17 +1,34 @@
-# Compatibility (M1d)
+# Compatibility (M2)
 
 | Layer | Pinned |
 | --- | --- |
 | Minigraf core | `v2.0.5` (`a861e55`) |
 | minigraf-c | `v2.0.5` (`8422f9f`) |
 | C header | `native/include/minigraf.h`, SHA-256 `8603C074…ADE7D` |
-| MinigrafSharp | `0.1.0-preview` line (unreleased) |
+| MinigrafSharp | `0.1.0-preview.1` |
 | Managed TFMs | `net8.0`, `net10.0` |
-| Qualified RID (M1d) | `win-x64` (lifecycle, raw/typed execution, file persistence, storage/recovery/temporal qualification) |
+| Packaged + qualified RID | `win-x64` (lifecycle, raw/typed execution, file persistence, storage/recovery/temporal qualification) |
 | Upstream file format | v7 (`src/storage/mod.rs`: `FORMAT_VERSION = 7`) |
 
-Recorded-but-unqualified RIDs: `linux-x64`, `linux-arm64`, `osx-x64`,
-`osx-arm64` (assets hashed in `native/upstream.json`, gates pending).
+## RID status
+
+Three states are distinguished: **qualified** (executed on that platform),
+**packaged** (shipped in the NuGet package), and **unsupported** (neither).
+M2 packages only what it qualified, so qualified = packaged.
+
+| RID | Asset source | Packaged | Qualified | NativeAOT | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `win-x64` | upstream windows x86_64 zip | yes | yes | yes (net10.0) | M2 baseline |
+| `linux-x64` | upstream linux x86_64 | no | no | unqualified | deferred: no execution environment |
+| `linux-arm64` | upstream linux aarch64 | no | no | unqualified | deferred: no execution environment |
+| `osx-arm64` | upstream macos universal2 | no | no | unqualified | deferred: no execution environment |
+| `osx-x64` | upstream macos universal2 | no | no | unqualified | deferred: no execution environment |
+
+The non-`win-x64` assets are hash-recorded in `native/upstream.json` and
+fetchable with `eng/Get-Native.ps1`, but are not packaged or advertised
+until they pass the RID gate (native acquisition, export + architecture
+verification, build/tests, clean package consumer, and NativeAOT where
+claimed) on a real runner. See [packaging.md](packaging.md).
 
 ## Upgrade rules
 
