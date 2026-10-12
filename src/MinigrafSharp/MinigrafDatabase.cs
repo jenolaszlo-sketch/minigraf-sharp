@@ -6,6 +6,12 @@ namespace MinigrafSharp;
 /// </summary>
 public sealed class MinigrafDatabase : IDisposable
 {
+    // Serializes execute/error-copy sequences on this database.
+    // minigraf_last_error is borrowed mutable diagnostic state on the handle:
+    // another call on the same handle may replace it before managed code
+    // copies it, and the native mutex does not cover the gap between the two
+    // C calls. Never a global lock: independent databases proceed in parallel.
+    private readonly object _sync = new();
     private Native.SafeMinigrafDatabaseHandle? _handle;
     private bool _disposed;
 
@@ -35,17 +41,80 @@ public sealed class MinigrafDatabase : IDisposable
     }
 
     /// <summary>
-    /// Releases the native database. Idempotent.
+    /// Executes one Datalog statement and returns the raw native JSON result
+    /// as a managed string, byte-identical in content (no normalization).
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="datalog"/> is null.</exception>
+    /// <exception cref="ObjectDisposedException">The database is disposed.</exception>
+    /// <exception cref="MinigrafExecutionException">The engine rejected the statement.</exception>
+    public string ExecuteRaw(string datalog)
+    {
+        ArgumentNullException.ThrowIfNull(datalog);
+
+        lock (_sync)
+        {
+            ThrowIfDisposed();
+            Native.SafeMinigrafDatabaseHandle handle = _handle!;
+
+            nint result = Interop.NativeMethods.MinigrafExecute(handle, datalog);
+            if (result == nint.Zero)
+            {
+                throw CaptureExecutionError(handle);
+            }
+
+            try
+            {
+                return Interop.NativeUtf8.ReadCString(result)
+                    ?? throw new MinigrafExecutionException(
+                        "minigraf_execute returned a null string.");
+            }
+            finally
+            {
+                Interop.NativeMethods.MinigrafStringFree(result);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Releases the native database. Idempotent. Waits for any in-flight
+    /// execution on this database rather than racing it.
     /// </summary>
     public void Dispose()
     {
+        lock (_sync)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _handle?.Dispose();
+            _handle = null;
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
         if (_disposed)
         {
-            return;
+            throw new ObjectDisposedException(GetType().FullName);
+        }
+    }
+
+    private static MinigrafExecutionException CaptureExecutionError(
+        Native.SafeMinigrafDatabaseHandle handle)
+    {
+        // Borrowed pointer: copy before any other call on this handle can
+        // replace it, then never free it. The per-database gate above keeps
+        // this execute/error pair atomic against sibling calls.
+        nint errorPtr = Interop.NativeMethods.MinigrafLastError(handle);
+        string? message = Interop.NativeUtf8.ReadCString(errorPtr);
+        if (string.IsNullOrEmpty(message))
+        {
+            message = "Minigraf execution failed without a native diagnostic.";
         }
 
-        _disposed = true;
-        _handle?.Dispose();
-        _handle = null;
+        return new MinigrafExecutionException(message);
     }
 }

@@ -50,3 +50,23 @@ public sealed class MinigrafNativeLoadException : MinigrafException
     {
     }
 }
+
+/// <summary>
+/// A Datalog execution failed in the native engine. The message is the
+/// diagnostic copied from <c>minigraf_last_error</c> at failure time, or a
+/// deterministic fallback when the engine exposed no diagnostic.
+/// It covers every Datalog command shape (query, transact, retract, rules):
+/// it reports that execution failed, never a result category.
+/// </summary>
+public sealed class MinigrafExecutionException : MinigrafException
+{
+    public MinigrafExecutionException(string message)
+        : base(message)
+    {
+    }
+
+    public MinigrafExecutionException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
