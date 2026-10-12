@@ -63,8 +63,12 @@ $binaryName = $asset.binary
 
 $stagingDir = Join-Path $repoRoot "native/staging/$Rid"
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+# Staging holds only the library and its manifest; downloads live in a
+# separate cache so the uploaded staging artifact has an exact inventory.
+$downloadDir = Join-Path $repoRoot "native/downloads/$Rid"
+New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
 
-$downloadPath = Join-Path $stagingDir $asset.release_asset
+$downloadPath = Join-Path $downloadDir $asset.release_asset
 if (-not (Test-Path -LiteralPath $downloadPath)) {
     Write-Host "Downloading $url ..."
     Invoke-WebRequest -Uri $url -OutFile $downloadPath

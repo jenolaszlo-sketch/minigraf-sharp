@@ -1,188 +1,150 @@
 <#
 .SYNOPSIS
-  Qualifies the built MinigrafSharp package with a clean external consumer.
+  Clean external package consumer against a built nupkg (distribution gate).
 
 .DESCRIPTION
-  For each TFM, creates a fresh console app in an OS temp directory outside
-  the repository, points a local nuget.config only at the built package
-  folder, installs MinigrafSharp with an isolated NUGET_PACKAGES cache,
-  builds, verifies the deployed native asset hash, and runs the consumer
-  with MINIGRAFSHARP_NATIVE_PATH absent. The consumer exercises in-memory
-  execution and file-backed persistence/reopen.
+  Creates an isolated console project outside the repository with an isolated
+  NuGet cache, restores the selected MinigrafSharp package, and exercises
+  in-memory execution (typed + raw), Unicode, and file-backed
+  write/checkpoint/reopen. Asserts exit code 0 and the expected stdout markers.
+  Also runs loader hardening on the built consumer: PATH/cwd contamination,
+  missing-native fail-closed, and the MINIGRAFSHARP_NATIVE_PATH override
+  matrix (valid / missing / corrupt / wrong-architecture, where the
+  wrong-architecture asset is another RID's library taken from the package).
 
-  A negative check then removes the deployed native asset and asserts the
-  consumer fails closed with a MinigrafNativeLoadException naming the RID,
-  filename and probed locations, proving resolution comes from the package
-  deployment and not a repository fallback.
+  With -Aot it publishes and executes the consumer as NativeAOT for -Rid; with
+  -Trim it publishes and executes it trimmed for -Rid. With -UsePublicFeed it
+  installs from nuget.org (for published-package verification) and additionally
+  compares the restored archive to the selected artifact.
 
-  No ProjectReference is used. The package is verified first.
+.PARAMETER Package
+  Path to the nupkg under test.
 
-.PARAMETER Tfms
-  Target frameworks to qualify. Defaults to net8.0 and net10.0.
+.PARAMETER TargetFramework
+  net8.0 or net10.0.
 
 .PARAMETER Rid
-  RID expected to deploy. Defaults to win-x64.
+  RID for AOT/trimmed publish (required with -Aot or -Trim).
 
-.PARAMETER KeepTemp
-  Keep the temp root for debugging instead of deleting it.
+.PARAMETER Aot
+  Publish and run the consumer as NativeAOT.
+
+.PARAMETER Trim
+  Publish and run the consumer trimmed.
+
+.PARAMETER UsePublicFeed
+  Install from nuget.org instead of a local folder feed.
+
+.PARAMETER SkipHardening
+  Skip the loader hardening checks (used when AOT/Trim already covers loading).
 
 .EXAMPLE
-  powershell -NoProfile -ExecutionPolicy Bypass -File eng/Test-PackageConsumer.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File eng/Test-PackageConsumer.ps1 -Package artifacts/packages/MinigrafSharp.0.1.0-preview.3.nupkg -TargetFramework net10.0 -Aot -Rid win-x64
 #>
 [CmdletBinding()]
 param(
-    [string[]]$Tfms = @("net8.0", "net10.0"),
-    [string]$Rid = "win-x64",
-    [switch]$KeepTemp
+    [Parameter(Mandatory = $true)][string]$Package,
+    [ValidateSet("net8.0", "net10.0")][string]$TargetFramework = "net10.0",
+    [ValidateSet("win-x64", "linux-x64", "osx-arm64")][string]$Rid,
+    [switch]$Aot,
+    [switch]$Trim,
+    [switch]$UsePublicFeed,
+    [switch]$SkipHardening
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$feed = Join-Path $repoRoot "artifacts/packages"
-
+function Fail([string]$message) { throw "PACKAGED-CONSUMER: $message" }
 function Invoke-Native {
-    # Runs a native command and returns combined stdout+stderr text and exit
-    # code without letting a non-zero exit or stderr line terminate the script.
     param([string]$Exe, [string[]]$Arguments)
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         $output = & $Exe @Arguments 2>&1
-        $text = ($output | Out-String)
-        $code = $LASTEXITCODE
+        return [PSCustomObject]@{ Text = ($output | Out-String); ExitCode = $LASTEXITCODE }
     }
-    finally {
-        $ErrorActionPreference = $previous
-    }
-    return [PSCustomObject]@{ Text = $text; ExitCode = $code }
+    finally { $ErrorActionPreference = $previous }
 }
 
-function Invoke-ConsumerExe {
-    # Runs the built consumer executable with a chosen working directory and
-    # environment overrides, then restores both.
-    param([string]$Exe, [string]$WorkDir, [hashtable]$ExtraEnv)
-    $saved = @{}
-    if ($ExtraEnv) {
-        foreach ($key in $ExtraEnv.Keys) {
-            $saved[$key] = [System.Environment]::GetEnvironmentVariable($key)
-            [System.Environment]::SetEnvironmentVariable($key, $ExtraEnv[$key])
-        }
-    }
-    $previous = Get-Location
+function Get-HostRid {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) { return "win-x64" }
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)) { return "linux-x64" }
+    return "osx-arm64"
+}
+
+function Get-ArchiveHashes([string]$archivePath) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
-        Set-Location -LiteralPath $WorkDir
-        return (Invoke-Native $Exe @())
-    }
-    finally {
-        Set-Location $previous
-        if ($ExtraEnv) {
-            foreach ($key in $ExtraEnv.Keys) {
-                [System.Environment]::SetEnvironmentVariable($key, $saved[$key])
-            }
+        $map = @{}
+        foreach ($entry in $archive.Entries) {
+            if ($entry.FullName.EndsWith("/") -or $entry.FullName -eq ".signature.p7s") { continue }
+            if ($map.ContainsKey($entry.FullName)) { Fail "duplicate archive entry '$($entry.FullName)'" }
+            $stream = $entry.Open()
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            try { $map[$entry.FullName] = [System.BitConverter]::ToString($sha.ComputeHash($stream)) }
+            finally { $sha.Dispose(); $stream.Dispose() }
         }
+        return $map
     }
+    finally { $archive.Dispose() }
 }
 
-function Get-CurrentRid {
-    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
-        if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq [System.Runtime.InteropServices.Architecture]::X64) { return "win-x64" }
-        return "win-arm64"
-    }
-    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)) {
-        if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { return "linux-arm64" }
-        return "linux-x64"
-    }
-    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
-        if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq [System.Runtime.InteropServices.Architecture]::X64) { return "osx-x64" }
-        return "osx-arm64"
-    }
-    throw "Unsupported OS."
-}
+if (($Aot -or $Trim) -and -not $Rid) { Fail "-Rid is required with -Aot or -Trim" }
+if (-not $Aot -and -not $Trim -and $Rid) { Fail "-Rid is only used with -Aot or -Trim" }
+if (($Aot -or $Trim) -and $UsePublicFeed) { Fail "-Aot/-Trim consume the selected local candidate; omit -UsePublicFeed" }
 
-$hostRid = Get-CurrentRid
-if ($hostRid -ne $Rid) {
-    throw "This host RID is $hostRid; qualification requires execution on $Rid. Run on a $Rid machine/CI runner."
-}
+if (-not (Test-Path -LiteralPath $Package)) { Fail "package not found: $Package" }
+$Package = (Resolve-Path -LiteralPath $Package).Path
+$version = [System.IO.Path]::GetFileNameWithoutExtension($Package) -replace '^MinigrafSharp\.', ''
+if ($version -eq [System.IO.Path]::GetFileNameWithoutExtension($Package)) { Fail "cannot parse version from $Package" }
 
-$failures = New-Object System.Collections.Generic.List[string]
-function Fail([string]$message) {
-    Write-Host "FAIL: $message"
-    $failures.Add($message)
-}
-function Pass([string]$message) {
-    Write-Host "PASS: $message"
-}
-
-# 1. Verify the package artifact first.
-& (Join-Path $PSScriptRoot "Verify-Package.ps1") -ExpectedRids @($Rid)
-if ($LASTEXITCODE -ne 0) { throw "Package verification failed; refusing to consume it." }
-
-$pkg = Get-ChildItem -Path $feed -Filter *.nupkg | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($null -eq $pkg) { throw "No package in $feed" }
-$packageId = "MinigrafSharp"
-$versionMatch = [regex]::Match($pkg.Name, '^MinigrafSharp\.(.+)\.nupkg$')
-$version = $versionMatch.Groups[1].Value
-Write-Host "Consuming $($pkg.Name) (version $version) on RID $Rid"
-
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("minigrafsharp-consumer-" + [System.Guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-$nugetCache = Join-Path $tempRoot "nuget-packages"
-New-Item -ItemType Directory -Path $nugetCache -Force | Out-Null
-
-# Assert the consumer root is outside the repository (no repo fallback).
-$repoFull = (Resolve-Path $repoRoot).Path
-$tempFull = (Resolve-Path $tempRoot).Path
-if ($tempFull.StartsWith($repoFull, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Consumer temp root must not be under the repository."
-}
-
-# Local-only feed: no nuget.org, no cache reuse.
-$nugetConfig = @"
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <clear />
-    <add key="local" value="$feed" />
-  </packageSources>
-</configuration>
-"@
-[System.IO.File]::WriteAllText((Join-Path $tempRoot "nuget.config"), $nugetConfig)
-
-$env:NUGET_PACKAGES = $nugetCache
-$env:MINIGRAFSHARP_NATIVE_PATH = $null
-
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $upstream = Get-Content -LiteralPath (Join-Path $repoRoot "native/upstream.json") -Raw | ConvertFrom-Json
-$expectedNativeSha = $upstream.assets."$Rid".binary_sha256.ToUpperInvariant()
-$nativeName = $upstream.assets."$Rid".binary
+$hostRid = Get-HostRid
+$nativeName = $upstream.assets."$hostRid".binary
+$expectedNativeSha = $upstream.assets."$hostRid".binary_sha256.ToUpperInvariant()
 
-function Get-Sha256([string]$Path) {
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
-}
+$previousPackages = $env:NUGET_PACKAGES
+$previousNativePath = $env:MINIGRAFSHARP_NATIVE_PATH
+$work = Join-Path ([System.IO.Path]::GetTempPath()) ("minigrafsharp-consumer-" + [System.Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $work | Out-Null
+
+$markers = @("override=absent", "Alice", "raw=True", "uni=True", "Bob")
 
 $program = @'
 using MinigrafSharp;
 
-string? overridePath = Environment.GetEnvironmentVariable("MINIGRAFSHARP_NATIVE_PATH");
-Console.WriteLine("override=" + (string.IsNullOrEmpty(overridePath) ? "absent" : overridePath));
+string? ov = Environment.GetEnvironmentVariable("MINIGRAFSHARP_NATIVE_PATH");
+Console.WriteLine("override=" + (string.IsNullOrEmpty(ov) ? "absent" : ov));
 
 using (var mem = MinigrafDatabase.OpenMemory())
 {
     mem.Execute("""(transact [[:alice :name "Alice"]])""");
-    var q = (MinigrafQueryResult)mem.Execute("""(query [:find ?name :where [?e :name ?name]])""");
-    Console.WriteLine(q.Rows[0]["?name"].GetString());
+    var typed = (MinigrafQueryResult)mem.Execute("""(query [:find ?name :where [?e :name ?name]])""");
+    Console.WriteLine(typed.Rows[0]["?name"].GetString());
+    string raw = mem.ExecuteRaw("""(query [:find ?name :where [?e :name ?name]])""");
+    Console.WriteLine("raw=" + raw.Contains("Alice"));
 }
 
-string dbPath = Path.Combine(Path.GetTempPath(), "minigrafsharp-consumer-" + Guid.NewGuid().ToString("N") + ".graph");
+const string Uni = "Z\u00fcrich \u2744 \u65e5\u672c\u8a9e \U0001F642";
+using (var um = MinigrafDatabase.OpenMemory())
+{
+    um.Execute($"""(transact [[:u :v "{Uni}"]])""");
+    var uq = (MinigrafQueryResult)um.Execute("(query [:find ?v :where [:u :v ?v]])");
+    Console.WriteLine("uni=" + (uq.Rows[0]["?v"].GetString() == Uni));
+}
+
+string db = Path.Combine(Path.GetTempPath(), "minigrafsharp-consumer-" + Guid.NewGuid().ToString("N") + ".graph");
 try
 {
-    using (var w = MinigrafDatabase.Open(dbPath))
+    using (var w = MinigrafDatabase.Open(db))
     {
         w.Execute("""(transact [[:bob :name "Bob"]])""");
         w.Checkpoint();
     }
-    using (var r = MinigrafDatabase.Open(dbPath))
+    using (var r = MinigrafDatabase.Open(db))
     {
         var q = (MinigrafQueryResult)r.Execute("""(query [:find ?name :where [?e :name ?name]])""");
         Console.WriteLine(q.Rows[0]["?name"].GetString());
@@ -190,167 +152,210 @@ try
 }
 finally
 {
-    foreach (var f in new[] { dbPath, dbPath + ".wal" })
+    foreach (var f in new[] { db, db + ".wal" })
     {
         try { if (File.Exists(f)) File.Delete(f); } catch { }
     }
 }
 '@
 
+$csprojText = @"
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$TargetFramework</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MinigrafSharp" Version="$version" />
+  </ItemGroup>
+</Project>
+"@
+
 try {
-    foreach ($tfm in $Tfms) {
-        Write-Host ""
-        Write-Host "=== $tfm ==="
-        $appDir = Join-Path $tempRoot ("app-" + $tfm)
-        & dotnet new console -o $appDir -f $tfm | Out-Null
-        if ($LASTEXITCODE -ne 0) { Fail "$tfm dotnet new console"; continue }
+    Remove-Item Env:\MINIGRAFSHARP_NATIVE_PATH -ErrorAction SilentlyContinue
 
-        [System.IO.File]::WriteAllText((Join-Path $appDir "Program.cs"), $program)
+    $csproj = Join-Path $work "Consumer.csproj"
+    [System.IO.File]::WriteAllText($csproj, $csprojText)
+    [System.IO.File]::WriteAllText((Join-Path $work "Program.cs"), $program)
 
-        $csproj = (Get-ChildItem -Path $appDir -Filter *.csproj | Select-Object -First 1).FullName
-        & dotnet add $csproj package $packageId --version $version --source $feed | Out-Null
-        if ($LASTEXITCODE -ne 0) { Fail "$tfm package install"; continue }
-        Pass "$tfm package install"
+    $feed = Join-Path $work "local-packages"
+    New-Item -ItemType Directory -Path $feed | Out-Null
+    Copy-Item -LiteralPath $Package -Destination $feed -Force
 
-        & dotnet build $appDir -c Release | Out-Null
-        if ($LASTEXITCODE -ne 0) { Fail "$tfm build"; continue }
-        Pass "$tfm build"
+    if ($UsePublicFeed) {
+        $sources = '    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />'
+        $mapping = ""
+    }
+    else {
+        $sources = @'
+    <add key="local" value="./local-packages" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+'@
+        $mapping = @'
+  <packageSourceMapping>
+    <packageSource key="local">
+      <package pattern="MinigrafSharp" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+'@
+    }
+    [System.IO.File]::WriteAllText((Join-Path $work "nuget.config"), @"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+$sources
+  </packageSources>
+$mapping
+</configuration>
+"@)
 
-        $outDir = Join-Path $appDir "bin/Release/$tfm"
-        $deployed = Join-Path $outDir ("runtimes/$Rid/native/" + $nativeName)
-        if (-not (Test-Path -LiteralPath $deployed)) {
-            $deployed = Join-Path $outDir $nativeName
+    $env:NUGET_PACKAGES = Join-Path $work "nuget-cache"
+    $add = Invoke-Native "dotnet" @("add", $csproj, "package", "MinigrafSharp", "--version", $version)
+    if ($add.ExitCode -ne 0) { Fail "package restore failed (isolated cache) :: $($add.Text)" }
+
+    $cached = Join-Path $env:NUGET_PACKAGES "minigrafsharp/$version/minigrafsharp.$version.nupkg"
+    if (-not (Test-Path -LiteralPath $cached)) { Fail "restored archive missing: $cached" }
+    $expectedHashes = Get-ArchiveHashes $Package
+    $actualHashes = Get-ArchiveHashes $cached
+    if ($actualHashes.Count -ne $expectedHashes.Count) { Fail "restored archive entry count differs from selected artifact" }
+    foreach ($name in $expectedHashes.Keys) {
+        if ($actualHashes[$name] -ne $expectedHashes[$name]) { Fail "restored package content differs from selected artifact: $name" }
+    }
+    Write-Output "Restored MinigrafSharp archive matches the selected candidate."
+
+    Push-Location -LiteralPath $work
+    try {
+        $run = Invoke-Native "dotnet" @("run", "--configuration", "Release", "--framework", $TargetFramework)
+        if ($run.ExitCode -ne 0) { Fail "consumer exited $($run.ExitCode) :: $($run.Text)" }
+        foreach ($marker in $markers) {
+            if ($run.Text -notmatch [regex]::Escape($marker)) { Fail "missing stdout marker '$marker' :: $($run.Text)" }
         }
-        if (-not (Test-Path -LiteralPath $deployed)) {
-            Fail "$tfm native asset deployed from package"
-            continue
-        }
-        if ((Get-Sha256 $deployed) -ne $expectedNativeSha) {
-            Fail "$tfm deployed native hash matches pinned metadata"
-        }
-        else {
-            Pass "$tfm deployed native hash matches pinned metadata ($($deployed.Replace($tempRoot, '<temp>')))"
-        }
+        Write-Output "OK consumer ($TargetFramework): all markers present"
+    }
+    finally { Pop-Location }
 
-        # Positive run: override absent, outside repo.
-        $run = Invoke-Native "dotnet" @("run", "--project", $appDir, "-c", "Release", "--no-build")
-        $runText = $run.Text
-        if ($run.ExitCode -eq 0 -and $runText -notmatch "override=absent") { Fail "$tfm override absent at runtime" } elseif ($runText -match "override=absent") { Pass "$tfm override absent at runtime" } else { Fail "$tfm override absent at runtime (got: $runText)" }
-        if ($runText -match "Alice" -and $runText -match "Bob") { Pass "$tfm in-memory + file-backed consumer output" } else { Fail "$tfm consumer output (got: $runText)" }
+    $outDir = Join-Path $work "bin/Release/$TargetFramework"
+    $deployed = Join-Path $outDir ("runtimes/$hostRid/native/" + $nativeName)
+    if (-not (Test-Path -LiteralPath $deployed)) { $deployed = Join-Path $outDir $nativeName }
+    if (-not (Test-Path -LiteralPath $deployed)) { Fail "native asset not deployed from package" }
+    if ((Get-FileHash -LiteralPath $deployed -Algorithm SHA256).Hash.ToUpperInvariant() -ne $expectedNativeSha) {
+        Fail "deployed native SHA-256 does not match pinned metadata"
+    }
+    Write-Output "Deployed native asset matches pinned metadata ($nativeName)."
 
-        # Negative run: remove deployed native, expect fail-closed diagnostic.
+    if (-not $SkipHardening -and -not $Aot -and -not $Trim) {
+        $exe = (Get-ChildItem -Path $outDir -Filter "Consumer*" | Where-Object { $_.Extension -in @(".exe", "") } | Select-Object -First 1).FullName
+        if (-not $exe) { Fail "consumer executable not found for hardening" }
+        $hardeningWork = Join-Path $work "hardening"
+        New-Item -ItemType Directory -Path $hardeningWork | Out-Null
+
+        # PATH contamination: a rogue same-named library on PATH must be ignored.
+        $rogue = Join-Path $work "rogue-path"
+        New-Item -ItemType Directory -Path $rogue | Out-Null
+        [System.IO.File]::WriteAllBytes((Join-Path $rogue $nativeName), (New-Object byte[] 4096))
+        $savedPath = $env:PATH
+        $env:PATH = $rogue + [System.IO.Path]::PathSeparator + $savedPath
+        try { $pathRun = Invoke-Native $exe @() } finally { $env:PATH = $savedPath }
+        if ($pathRun.ExitCode -ne 0 -or $pathRun.Text -notmatch "Alice") { Fail "PATH rogue hijack check :: $($pathRun.Text)" }
+        Write-Output "OK PATH rogue ignored."
+
+        # cwd contamination: a rogue same-named library in cwd must be ignored.
+        $rogueCwd = Join-Path $work "rogue-cwd"
+        New-Item -ItemType Directory -Path $rogueCwd | Out-Null
+        [System.IO.File]::WriteAllBytes((Join-Path $rogueCwd $nativeName), (New-Object byte[] 4096))
+        $prevLoc = Get-Location
+        try { Set-Location $rogueCwd; $cwdRun = Invoke-Native $exe @() } finally { Set-Location $prevLoc }
+        if ($cwdRun.ExitCode -ne 0 -or $cwdRun.Text -notmatch "Alice") { Fail "cwd rogue hijack check :: $($cwdRun.Text)" }
+        Write-Output "OK cwd rogue ignored."
+
+        # Missing native: remove the deployed asset, expect fail-closed.
         $backup = $deployed + ".bak"
         Move-Item -LiteralPath $deployed -Destination $backup -Force
+        try { $missingRun = Invoke-Native $exe @() } finally { Move-Item -LiteralPath $backup -Destination $deployed -Force }
+        if ($missingRun.ExitCode -eq 0 -or $missingRun.Text -notmatch "MinigrafNativeLoadException") { Fail "missing native did not fail closed :: $($missingRun.Text)" }
+        Write-Output "OK missing native fails closed."
+
+        # Override matrix.
+        $validRun = Invoke-Native $exe @()
+        if ($validRun.ExitCode -ne 0) { Fail "override baseline run failed" }
+
+        $prevOverride = $env:MINIGRAFSHARP_NATIVE_PATH
         try {
-            $neg = Invoke-Native "dotnet" @("run", "--project", $appDir, "-c", "Release", "--no-build")
-            $negText = $neg.Text
-            if ($neg.ExitCode -ne 0 -and $negText -match "MinigrafNativeLoadException" -and $negText -match [regex]::Escape($nativeName) -and $negText -match $Rid) {
-                Pass "$tfm missing native fails closed with actionable diagnostic"
+            $env:MINIGRAFSHARP_NATIVE_PATH = Join-Path $work "nope.dll"
+            $ovMissing = Invoke-Native $exe @()
+            if ($ovMissing.ExitCode -eq 0 -or $ovMissing.Text -notmatch "MinigrafNativeLoadException") { Fail "override missing did not fail closed" }
+            Write-Output "OK override missing fails closed (no fallthrough)."
+
+            $corrupt = Join-Path $work "corrupt.dll"
+            [System.IO.File]::WriteAllBytes($corrupt, (New-Object byte[] 4096))
+            $env:MINIGRAFSHARP_NATIVE_PATH = $corrupt
+            $ovCorrupt = Invoke-Native $exe @()
+            if ($ovCorrupt.ExitCode -eq 0 -or $ovCorrupt.Text -notmatch "MinigrafNativeLoadException") { Fail "override corrupt did not fail closed" }
+            Write-Output "OK override corrupt fails closed."
+
+            # Wrong architecture: another RID's library extracted from the package.
+            $wrongRid = @("win-x64", "linux-x64", "osx-arm64") | Where-Object { $_ -ne $hostRid } | Select-Object -First 1
+            $wrongName = $upstream.assets."$wrongRid".binary
+            $wrongExtract = Join-Path $work "wrong-arch"
+            New-Item -ItemType Directory -Path $wrongExtract | Out-Null
+            $wrongPath = Join-Path $wrongExtract ("wrong-" + $wrongName)
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($Package)
+            try {
+                $entryName = "runtimes/$wrongRid/native/$wrongName"
+                $entry = $zip.Entries | Where-Object { $_.FullName -eq $entryName } | Select-Object -First 1
+                if ($null -eq $entry) { Fail "package is missing $entryName for wrong-arch probe" }
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $wrongPath, $true)
             }
-            else {
-                Fail "$tfm missing native diagnostic (got: $negText)"
-            }
+            finally { $zip.Dispose() }
+            $env:MINIGRAFSHARP_NATIVE_PATH = $wrongPath
+            $ovWrong = Invoke-Native $exe @()
+            if ($ovWrong.ExitCode -eq 0 -or $ovWrong.Text -notmatch "MinigrafNativeLoadException") { Fail "override wrong-architecture did not fail closed" }
+            Write-Output "OK override wrong-architecture ($wrongRid) fails closed."
         }
         finally {
-            Move-Item -LiteralPath $backup -Destination $deployed -Force
-        }
-
-        if ($tfm -eq "net10.0") {
-            $hardeningExe = (Get-ChildItem -Path $outDir -Filter *.exe | Select-Object -First 1).FullName
-            $hardeningDeployed = $deployed
+            if ($null -eq $prevOverride) { Remove-Item Env:\MINIGRAFSHARP_NATIVE_PATH -ErrorAction SilentlyContinue }
+            else { $env:MINIGRAFSHARP_NATIVE_PATH = $prevOverride }
         }
     }
 
-    # --- M2.5 consumer hardening: PATH/cwd contamination and override matrix ---
-    if ($hardeningExe) {
-        Write-Host ""
-        Write-Host "=== consumer hardening ==="
-        $hardeningWork = Join-Path $tempRoot "work"
-        New-Item -ItemType Directory -Path $hardeningWork -Force | Out-Null
-
-        $rogueDir = Join-Path $tempRoot "rogue-path"
-        New-Item -ItemType Directory -Path $rogueDir -Force | Out-Null
-        [System.IO.File]::WriteAllBytes((Join-Path $rogueDir $nativeName), (New-Object byte[] 4096))
-        $savedPath = $env:PATH
-        $env:PATH = $rogueDir + [System.IO.Path]::PathSeparator + $savedPath
-        try { $pathRun = Invoke-Native $hardeningExe @() } finally { $env:PATH = $savedPath }
-        if ($pathRun.ExitCode -eq 0 -and $pathRun.Text -match "Alice") {
-            Pass "PATH rogue $nativeName does not hijack loading"
+    if ($Aot -or $Trim) {
+        $publishArgs = @("publish", $csproj, "--configuration", "Release", "--framework", $TargetFramework, "--runtime", $Rid, "--self-contained", "true", "--nologo", "-p:TreatWarningsAsErrors=true", "-p:ILLinkTreatWarningsAsErrors=true")
+        if ($Aot) { $publishArgs += "-p:PublishAot=true" } else { $publishArgs += "-p:PublishTrimmed=true" }
+        $label = if ($Aot) { "NativeAOT" } else { "trimmed" }
+        $publish = Invoke-Native "dotnet" $publishArgs
+        if ($publish.ExitCode -ne 0) { Fail "$label publish failed for $Rid :: $($publish.Text)" }
+        if ($publish.Text -match "warning IL[0-9]{4}") { Fail "$label publish emitted trim/AOT analysis warnings :: $($publish.Text)" }
+        $published = Join-Path $work "bin/Release/$TargetFramework/$Rid/publish/Consumer"
+        if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) { $published += ".exe" }
+        if (-not (Test-Path -LiteralPath $published)) { Fail "$label executable not found: $published" }
+        $aotRun = Invoke-Native $published @()
+        if ($aotRun.ExitCode -ne 0) { Fail "$label consumer exited $($aotRun.ExitCode) :: $($aotRun.Text)" }
+        foreach ($marker in $markers) {
+            if ($aotRun.Text -notmatch [regex]::Escape($marker)) { Fail "$label consumer missing marker '$marker' :: $($aotRun.Text)" }
         }
-        else {
-            Fail "PATH rogue hijack check (got: $($pathRun.Text))"
-        }
-
-        $rogueCwd = Join-Path $tempRoot "rogue-cwd"
-        New-Item -ItemType Directory -Path $rogueCwd -Force | Out-Null
-        [System.IO.File]::WriteAllBytes((Join-Path $rogueCwd $nativeName), (New-Object byte[] 4096))
-        $cwdRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $rogueCwd -ExtraEnv @{}
-        if ($cwdRun.ExitCode -eq 0 -and $cwdRun.Text -match "Alice") {
-            Pass "cwd rogue $nativeName does not hijack loading (application base wins)"
-        }
-        else {
-            Fail "cwd rogue hijack check (got: $($cwdRun.Text))"
-        }
-
-        $validRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = $hardeningDeployed }
-        if ($validRun.ExitCode -eq 0 -and $validRun.Text -match "Alice") {
-            Pass "override: valid staged asset loads"
-        }
-        else {
-            Fail "override valid (got: $($validRun.Text))"
-        }
-
-        $missingRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = (Join-Path $hardeningWork "nope.dll") }
-        if ($missingRun.ExitCode -ne 0 -and $missingRun.Text -match "MinigrafNativeLoadException") {
-            Pass "override: nonexistent path fails closed (no fallthrough to package)"
-        }
-        else {
-            Fail "override missing (got: $($missingRun.Text))"
-        }
-
-        $corrupt = Join-Path $hardeningWork "corrupt.dll"
-        [System.IO.File]::WriteAllBytes($corrupt, (New-Object byte[] 4096))
-        $corruptRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = $corrupt }
-        if ($corruptRun.ExitCode -ne 0 -and $corruptRun.Text -match "MinigrafNativeLoadException") {
-            Pass "override: corrupt file fails closed"
-        }
-        else {
-            Fail "override corrupt (got: $($corruptRun.Text))"
-        }
-
-        $wrongArch = Join-Path $repoRoot "native/staging/linux-x64/libminigraf.so"
-        if (Test-Path -LiteralPath $wrongArch) {
-            $wrongArchRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = $wrongArch }
-            if ($wrongArchRun.ExitCode -ne 0 -and $wrongArchRun.Text -match "MinigrafNativeLoadException") {
-                Pass "override: wrong-architecture asset fails closed"
-            }
-            else {
-                Fail "override wrong-architecture (got: $($wrongArchRun.Text))"
-            }
-        }
-        else {
-            Write-Host "SKIP: override wrong-architecture (stage linux-x64 to exercise)"
-        }
+        Write-Output "OK $label consumer ($TargetFramework, $Rid): all markers present"
     }
 }
 finally {
-    $env:NUGET_PACKAGES = $null
-    if (-not $KeepTemp) {
-        for ($attempt = 0; $attempt -lt 5; $attempt++) {
-            try { Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction Stop; break }
-            catch { Start-Sleep -Milliseconds 200 }
-        }
+    if ($null -eq $previousPackages) { Remove-Item Env:\NUGET_PACKAGES -ErrorAction SilentlyContinue }
+    else { $env:NUGET_PACKAGES = $previousPackages }
+    if ($null -eq $previousNativePath) { Remove-Item Env:\MINIGRAFSHARP_NATIVE_PATH -ErrorAction SilentlyContinue }
+    else { $env:MINIGRAFSHARP_NATIVE_PATH = $previousNativePath }
+    $resolvedWork = [System.IO.Path]::GetFullPath($work)
+    $resolvedTemp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $resolvedWork.StartsWith($resolvedTemp, [StringComparison]::OrdinalIgnoreCase) -or
+        -not ([System.IO.Path]::GetFileName($resolvedWork)).StartsWith("minigrafsharp-consumer-", [StringComparison]::Ordinal)) {
+        Fail "refusing cleanup outside the consumer temporary directory"
     }
-    else {
-        Write-Host "Kept temp root: $tempRoot"
-    }
+    Remove-Item -LiteralPath $resolvedWork -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-if ($failures.Count -gt 0) {
-    Write-Host ""
-    Write-Host "$($failures.Count) PACKAGE CONSUMER CHECK(S) FAILED"
-    exit 1
-}
-Write-Host ""
-Write-Host "PACKAGE CONSUMER QUALIFICATION PASSED"
-exit 0
+Write-Output "Packaged-consumer test passed ($TargetFramework)."

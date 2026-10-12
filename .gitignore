@@ -11,6 +11,7 @@ TestResults/
 *.snupkg
 *.log
 native/staging/
+native/downloads/
 native/upstream/
 native/target/
 .tools/

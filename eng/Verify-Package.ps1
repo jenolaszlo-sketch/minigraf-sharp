@@ -13,8 +13,9 @@
   Path to the .nupkg. Defaults to the newest package under artifacts/packages.
 
 .PARAMETER ExpectedRids
-  RIDs expected to be packaged. Defaults to win-x64 (the only RID qualified
-  by execution). Update together with the library csproj and docs.
+  RIDs expected to be packaged. Defaults to the qualified set
+  (win-x64, linux-x64, osx-arm64). Update together with the library csproj,
+  eng/Verify-NativeStaging.ps1 and docs.
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File eng/Verify-Package.ps1
@@ -22,7 +23,7 @@
 [CmdletBinding()]
 param(
     [string]$PackagePath = "",
-    [string[]]$ExpectedRids = @("win-x64")
+    [string[]]$ExpectedRids = @("win-x64", "linux-x64", "osx-arm64")
 )
 
 Set-StrictMode -Version Latest
@@ -124,11 +125,14 @@ try {
 
     # Forbidden payload.
     $forbidden = @($names | Where-Object {
-            $_ -match '\.(nupkg|snupkg|zip|tar\.gz|tar\.xz|so|dylib)$' -or
+            $_ -match '\.(nupkg|snupkg|zip|tar\.gz|tar\.xz)$' -or
             $_ -match '^\.git' -or
-            $_ -match '(^|/)(MinigrafSharp\.Tests|MinigrafSharp\.IntegrationTests|MinigrafSharp\.QualificationTests|MinigrafSharp\.QuickStart|MinigrafSharp\.AotSmoke)(/|$)' -or
+            $_ -match '(^|/)(MinigrafSharp\.Tests|MinigrafSharp\.IntegrationTests|MinigrafSharp\.QualificationTests|MinigrafSharp\.QuickStart)(/|$)' -or
             $_ -match 'minigrafsharp-native\.json$' -or
-            $_ -match 'staging/'
+            $_ -match 'staging/' -or
+            # Binary payloads are allowed only as managed lib/<tfm>/ assemblies
+            # or RID native assets under runtimes/<rid>/native/.
+            ($_ -match '\.(dll|so|dylib)$' -and $_ -notmatch '^runtimes/[^/]+/native/' -and $_ -notmatch '^lib/[^/]+/')
         })
     Check ($forbidden.Count -eq 0) "no forbidden payload (found: $($forbidden -join ', '))"
 
