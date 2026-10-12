@@ -1,8 +1,9 @@
-// M0 integration tests: real pinned minigraf-c engine, no mocks.
+// M1a integration tests: raw execution boundary on the real engine.
 // The native loader caches per process, so the missing-asset test must run
 // FIRST. Override-path loading is proven in a child process (fresh loader).
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using MinigrafSharp;
 using MinigrafSharp.Native;
 
@@ -151,7 +152,7 @@ try
     {
         for (int i = 0; i < 25; i++)
         {
-            using var db = MinigrafDatabase.OpenMemory();
+            using var execDb = MinigrafDatabase.OpenMemory();
         }
     });
     Check(true, "concurrent open/dispose succeeds");
@@ -195,6 +196,213 @@ try
 catch (Exception ex)
 {
     Check(false, $"LoadedPath reports staged asset ({ex.GetType().Name}: {ex.Message})");
+}
+
+// 8. Null input is a managed argument error (no native call).
+try
+{
+    using var nullDb = MinigrafDatabase.OpenMemory();
+    Check(Throws<ArgumentNullException>(() => nullDb.ExecuteRaw(null!)), "null datalog rejected");
+}
+catch (Exception ex)
+{
+    Check(false, $"null datalog rejected ({ex.GetType().Name}: {ex.Message})");
+}
+
+// 9. Use after dispose never reaches the released native handle.
+try
+{
+    var disposedDb = MinigrafDatabase.OpenMemory();
+    disposedDb.Dispose();
+    Check(
+        Throws<ObjectDisposedException>(() => disposedDb.ExecuteRaw("(query [:find ?x :where [?e :name ?x]])")),
+        "disposed ExecuteRaw throws ObjectDisposedException");
+}
+catch (Exception ex)
+{
+    Check(false, $"disposed ExecuteRaw throws ObjectDisposedException ({ex.GetType().Name}: {ex.Message})");
+}
+
+// 10. Transact returns the native transaction JSON shape (raw, unparsed by production code).
+using var execDb = MinigrafDatabase.OpenMemory();
+string transactJson = execDb.ExecuteRaw("""(transact [[:alice :name "Alice"]])""");
+Check(transactJson.Length != 0, "transact returns non-empty raw JSON");
+try
+{
+    using JsonDocument txDoc = JsonDocument.Parse(transactJson);
+    Check(txDoc.RootElement.TryGetProperty("transacted", out _), "transact JSON has transacted shape");
+}
+catch (Exception ex)
+{
+    Check(false, $"transact JSON has transacted shape ({ex.GetType().Name}: {ex.Message})");
+}
+
+// 11. Query raw JSON contains the transacted fact.
+string queryJson = execDb.ExecuteRaw("(query [:find ?name :where [?e :name ?name]])");
+Check(queryJson.Contains("Alice", StringComparison.Ordinal), "query raw JSON contains Alice");
+
+// 12. Unicode round-trips exactly through UTF-8 in and out.
+const string UnicodeValue = "Zürich ❄ 日本語 🙂";
+execDb.ExecuteRaw($"""(transact [[:u1 :place/label "{UnicodeValue}"]])""");
+string unicodeJson = execDb.ExecuteRaw("(query [:find ?v :where [?e :place/label ?v]])");
+bool unicodeFound = false;
+try
+{
+    using JsonDocument uniDoc = JsonDocument.Parse(unicodeJson);
+    foreach (JsonElement row in uniDoc.RootElement.GetProperty("results").EnumerateArray())
+    {
+        foreach (JsonElement cell in row.EnumerateArray())
+        {
+            if (cell.ValueKind == JsonValueKind.String && cell.GetString() == UnicodeValue)
+            {
+                unicodeFound = true;
+            }
+        }
+    }
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"  unicode query parse failed: {ex.GetType().Name}: {ex.Message}");
+}
+Check(unicodeFound, "unicode value round-trips exactly");
+
+// 13. Malformed Datalog becomes a managed execution exception with a diagnostic.
+const string BadDatalog = "(this is not valid datalog {{{)";
+string badMessage = "";
+bool badThrew = false;
+try
+{
+    execDb.ExecuteRaw(BadDatalog);
+}
+catch (MinigrafExecutionException ex)
+{
+    badThrew = true;
+    badMessage = ex.Message;
+}
+Check(badThrew, "malformed datalog throws MinigrafExecutionException");
+Check(badMessage.Length != 0, "execution exception carries native diagnostic");
+
+// 14. Repeated failures stay predictable; later valid calls still succeed.
+int diagnosed = 0;
+for (int i = 0; i < 50; i++)
+{
+    try
+    {
+        execDb.ExecuteRaw(BadDatalog);
+    }
+    catch (MinigrafExecutionException ex)
+    {
+        if (ex.Message.Length != 0)
+        {
+            diagnosed++;
+        }
+    }
+}
+Check(diagnosed == 50, "repeated malformed calls fail predictably");
+string afterFail = execDb.ExecuteRaw("""(transact [[:bob :name "Bob"]])""");
+Check(afterFail.Contains("transacted", StringComparison.Ordinal), "valid call succeeds after failures");
+
+// 15. Alternating invalid/valid does not poison the handle.
+bool alternating = true;
+for (int i = 0; i < 20; i++)
+{
+    try
+    {
+        execDb.ExecuteRaw(BadDatalog);
+        alternating = false;
+    }
+    catch (MinigrafExecutionException)
+    {
+    }
+
+    string probeJson = execDb.ExecuteRaw("(query [:find ?name :where [?e :name ?name]])");
+    if (!probeJson.Contains("Bob", StringComparison.Ordinal))
+    {
+        alternating = false;
+    }
+}
+Check(alternating, "alternating invalid/valid does not poison handle");
+
+// 16. Repeated execution sanity (owned-string free on every success path).
+try
+{
+    using var stressDb = MinigrafDatabase.OpenMemory();
+    for (int i = 0; i < 1000; i++)
+    {
+        if (i % 2 == 0)
+        {
+            stressDb.ExecuteRaw($"""(transact [[:s{i} :name "N-{i}"]])""");
+        }
+        else
+        {
+            stressDb.ExecuteRaw("(query [:find ?name :where [?e :name ?name]])");
+        }
+    }
+    Check(true, "1000 mixed ExecuteRaw calls succeed");
+}
+catch (Exception ex)
+{
+    Check(false, $"1000 mixed ExecuteRaw calls succeed ({ex.GetType().Name}: {ex.Message})");
+}
+
+// 17. Error-capture race: failures must keep a non-empty diagnostic while
+// siblings succeed on the same handle (per-database gate, no global lock).
+try
+{
+    using var raceDb = MinigrafDatabase.OpenMemory();
+    int okCount = 0;
+    int raceDiagnosed = 0;
+    int emptyDiag = 0;
+    int unexpected = 0;
+    Parallel.For(0, 8, task =>
+    {
+        for (int i = 0; i < 120; i++)
+        {
+            if (i % 2 == 0)
+            {
+                try
+                {
+                    raceDb.ExecuteRaw("(query [:find ?x :where [?e :name ?x]])");
+                    Interlocked.Increment(ref okCount);
+                }
+                catch (Exception)
+                {
+                    Interlocked.Increment(ref unexpected);
+                }
+            }
+            else
+            {
+                try
+                {
+                    raceDb.ExecuteRaw($"(definitely not datalog {task}-{i} {{{{");
+                    Interlocked.Increment(ref unexpected);
+                }
+                catch (MinigrafExecutionException ex)
+                {
+                    if (ex.Message.Length != 0)
+                    {
+                        Interlocked.Increment(ref raceDiagnosed);
+                    }
+                    else
+                    {
+                        Interlocked.Increment(ref emptyDiag);
+                    }
+                }
+                catch (Exception)
+                {
+                    Interlocked.Increment(ref unexpected);
+                }
+            }
+        }
+    });
+    Check(okCount == 480, $"racy valid calls all succeed ({okCount}/480)");
+    Check(raceDiagnosed == 480, $"racy failures all diagnosed ({raceDiagnosed}/480)");
+    Check(emptyDiag == 0, "no empty failure diagnostic");
+    Check(unexpected == 0, "no unexpected outcome");
+}
+catch (Exception ex)
+{
+    Check(false, $"error-capture race behaves ({ex.GetType().Name}: {ex.Message})");
 }
 
 Console.WriteLine(failures == 0 ? "ALL INTEGRATION TESTS PASSED" : $"{failures} INTEGRATION TEST(S) FAILED");

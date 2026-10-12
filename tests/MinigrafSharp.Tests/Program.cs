@@ -101,10 +101,11 @@ Check(
         {
             "MinigrafSharp.MinigrafDatabase",
             "MinigrafSharp.MinigrafException",
+            "MinigrafSharp.MinigrafExecutionException",
             "MinigrafSharp.MinigrafNativeLoadException",
             "MinigrafSharp.MinigrafOpenException",
         }.Order()),
-    "public types are exactly the M0 surface");
+    "public types are exactly the M1a surface");
 Check(exported.All(t => t.Namespace == "MinigrafSharp"), "no public Interop/Native types");
 bool leaksNative = false;
 foreach (Type type in exported)

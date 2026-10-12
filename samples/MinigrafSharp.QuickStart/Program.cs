@@ -2,4 +2,7 @@ using MinigrafSharp;
 
 using var db = MinigrafDatabase.OpenMemory();
 
-Console.WriteLine("Minigraf opened successfully.");
+string result = db.ExecuteRaw(
+    """(transact [[:alice :name "Alice"]])""");
+
+Console.WriteLine(result);
