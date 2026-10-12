@@ -1,11 +1,13 @@
-// M1b unit tests: managed behavior only, no native engine required.
+// Unit tests: managed behavior only, no native engine required.
 // Style follows BiscuitSharp (plain Exe runner, no test-framework dependency).
 using System.Collections;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using MinigrafSharp;
+using MinigrafSharp.Interop;
 using MinigrafSharp.Native;
 
 int failures = 0;
@@ -272,6 +274,232 @@ foreach (string bad in badShapes)
 }
 Check(rejected == badShapes.Length, $"malformed shapes fail closed ({rejected}/{badShapes.Length})");
 Check(Throws<ArgumentNullException>(() => MinigrafResultDecoder.Decode(null!)), "decode null rejected");
+
+// 14. M2.5 hostile/malformed corpus, part A: inputs that must fail closed.
+string[] mustReject =
+[
+    "",
+    "   ",
+    "{",
+    "{\"transacted\":",
+    "{\"transacted\":1",
+    "{\"variables\":[\"?x\"],\"results\":[[1]]",
+    "\t\r\n",
+    "{\"transacted\":NaN}",
+    "{\"transacted\":Infinity}",
+    "{\"transacted\":-Infinity}",
+    "{\"transacted\":1e3}",
+    "{\"ok\":1}",
+    "{\"ok\":\"true\"}",
+    "{\"ok\":false}",
+    "{\"ok\":null}",
+    "{\"transacted\":\"1\"}",
+    "{\"transacted\":-1}",
+    "{\"transacted\":1.5}",
+    "{\"transacted\":1,\"retracted\":2}",
+    "{\"transacted\":1,\"ok\":true}",
+    "{\"transacted\":1,\"variables\":[],\"results\":[]}",
+    "{\"retracted\":\"2\"}",
+    "{\"variables\":[\"?x\"]}",
+    "{\"results\":[[1]]}",
+    "{\"variables\":\"?x\",\"results\":[]}",
+    "{\"variables\":[1],\"results\":[]}",
+    "{\"variables\":[\"?x\"],\"results\":{}}",
+    "{\"variables\":[\"?x\"],\"results\":[1]}",
+    "{\"variables\":[\"?x\"],\"results\":[[1,2]]}",
+    "{\"variables\":[\"?x\",\"?x\"],\"results\":[[1,2]]}",
+    "{\"variables\":[\"?x\"],\"results\":[[{}]]}",
+    "{\"variables\":[\"?x\"],\"results\":[[[1]]]}",
+    "{\"variables\":[],\"results\":[[18446744073709551616]]}",
+    "{\"transacted\":18446744073709551616}",
+];
+int corpusRejected = 0;
+foreach (string bad in mustReject)
+{
+    try
+    {
+        MinigrafResultDecoder.Decode(bad);
+        Console.WriteLine($"  accepted (must reject): {bad}");
+    }
+    catch (MinigrafResultException)
+    {
+        corpusRejected++;
+    }
+}
+Check(corpusRejected == mustReject.Length, $"hostile corpus fails closed ({corpusRejected}/{mustReject.Length})");
+
+// 15. M2.5 hostile corpus, part B: edge inputs must terminate predictably,
+// i.e. either decode or raise MinigrafResultException — never an unexpected
+// exception type (NullReference, index, etc.). Outcomes are logged.
+string longName = "?" + new string('v', 8192);
+string longValue = new string('x', 100_000);
+string[] edgeInputs =
+[
+    "{\"transacted\":1,\"transacted\":2}",
+    "{\"ok\":true,\"ok\":false}",
+    "{\"variables\":[\"?v\"],\"results\":[[\"a\\u0000b\"]]}",
+    "{\"variables\":[\"?v\"],\"results\":[[\"\\ud800\"]]}",
+    "{\"variables\":[\"?v\"],\"results\":[[\"\\ud83d\\ude00\"]]}",
+    "{\"variables\":[\"\\u0000\"],\"results\":[[1]]}",
+    $" {{\"variables\":[\"{longName}\"],\"results\":[[1]]}}",
+    $"{{\"variables\":[\"?v\"],\"results\":[[\"{longValue}\"]]}}",
+    "{\"variables\":[\"?v\"],\"results\":[[" + new string('[', 200) + "1" + new string(']', 200) + "]]}",
+    "\uFEFF{\"transacted\":1}",
+];
+int edgeDecoded = 0;
+int edgeRejected = 0;
+int edgeUnexpected = 0;
+foreach (string input in edgeInputs)
+{
+    try
+    {
+        MinigrafResultDecoder.Decode(input);
+        edgeDecoded++;
+    }
+    catch (MinigrafResultException)
+    {
+        edgeRejected++;
+    }
+    catch (Exception ex)
+    {
+        edgeUnexpected++;
+        Console.WriteLine($"  unexpected exception {ex.GetType().Name} for: {input[..Math.Min(60, input.Length)]}");
+    }
+}
+Check(edgeUnexpected == 0, $"edge inputs terminate predictably ({edgeDecoded} decoded / {edgeRejected} rejected, 0 unexpected)");
+Console.WriteLine($"  edge corpus: {edgeDecoded} decoded, {edgeRejected} rejected");
+
+// 16. Bounded-fuzz corpus: deterministic mutations must never escape as an
+// unexpected exception type.
+var fuzzRandom = new Random(20261012);
+int fuzzUnexpected = 0;
+for (int i = 0; i < 500; i++)
+{
+    int length = fuzzRandom.Next(0, 64);
+    var chars = new char[length];
+    const string alphabet = "{}[]\":,0123456789abctruefal n u\\\"/";
+    for (int c = 0; c < length; c++)
+    {
+        chars[c] = alphabet[fuzzRandom.Next(alphabet.Length)];
+    }
+
+    string candidate = new(chars);
+    if (fuzzRandom.Next(2) == 0)
+    {
+        candidate = "{\"variables\":[\"?v\"],\"results\":[[" + candidate + "]]}";
+    }
+
+    try
+    {
+        MinigrafResultDecoder.Decode(candidate);
+    }
+    catch (MinigrafResultException)
+    {
+    }
+    catch (Exception ex)
+    {
+        fuzzUnexpected++;
+        Console.WriteLine($"  fuzz seed=20261012 i={i} unexpected {ex.GetType().Name}: {candidate}");
+    }
+}
+Check(fuzzUnexpected == 0, "bounded fuzz (500 deterministic inputs) escapes no unexpected exception");
+
+// 17. Large managed result probes: bounded sizes to expose indexing/collection
+// bugs without becoming a benchmark.
+var oneByMany = new StringBuilder("{\"variables\":[\"?v\"],\"results\":[");
+const int oneByManyRows = 5000;
+for (int i = 0; i < oneByManyRows; i++)
+{
+    if (i > 0) { oneByMany.Append(','); }
+    oneByMany.Append('[').Append(i).Append(']');
+}
+oneByMany.Append("]}");
+MinigrafQueryResult bigSingle = (MinigrafQueryResult)MinigrafResultDecoder.Decode(oneByMany.ToString());
+Check(bigSingle.Rows.Count == oneByManyRows && bigSingle.Rows[oneByManyRows - 1][0].GetInt64() == oneByManyRows - 1,
+    $"large 1x{oneByManyRows} decodes with exact indexing");
+
+var manyByMany = new StringBuilder("{\"variables\":[\"?a\",\"?b\",\"?c\",\"?d\",\"?e\"],\"results\":[");
+const int manyRows = 500;
+for (int i = 0; i < manyRows; i++)
+{
+    if (i > 0) { manyByMany.Append(','); }
+    manyByMany.Append("[").Append(i).Append(',').Append("\"s").Append(i).Append("\",")
+        .Append(i % 2 == 0 ? "true" : "false").Append(',').Append(i).Append(".5,null]");
+}
+manyByMany.Append("]}");
+MinigrafQueryResult bigMulti = (MinigrafQueryResult)MinigrafResultDecoder.Decode(manyByMany.ToString());
+Check(bigMulti.Rows.Count == manyRows
+    && bigMulti.Rows[manyRows - 1]["?b"].GetString() == "s" + (manyRows - 1)
+    && bigMulti.Rows[manyRows - 1]["?e"].IsNull,
+    $"large 5x{manyRows} decodes with exact indexing");
+
+string hugeValue = new string('q', 250_000);
+MinigrafQueryResult longCell = (MinigrafQueryResult)MinigrafResultDecoder.Decode(
+    "{\"variables\":[\"?v\"],\"results\":[[\"" + hugeValue + "\"]]}");
+Check(longCell.Rows[0][0].GetString().Length == hugeValue.Length, "large string value decodes intact");
+
+// 18. Strict UTF-8 helper negative corpus (internal NativeUtf8).
+static string? ReadUtf8(byte[] bytes)
+{
+    nint pointer = Marshal.AllocHGlobal(bytes.Length + 1);
+    try
+    {
+        Marshal.Copy(bytes, 0, pointer, bytes.Length);
+        Marshal.WriteByte(pointer, bytes.Length, 0);
+        return NativeUtf8.ReadCString(pointer);
+    }
+    finally
+    {
+        Marshal.FreeHGlobal(pointer);
+    }
+}
+
+Check(ReadUtf8(Encoding.UTF8.GetBytes("abc")) == "abc", "utf8 ascii round-trips");
+Check(ReadUtf8(Encoding.UTF8.GetBytes("ü❄☃")) == "ü❄☃", "utf8 multibyte round-trips");
+Check(ReadUtf8(Encoding.UTF8.GetBytes("🙂🚀")) == "🙂🚀", "utf8 emoji round-trips");
+Check(ReadUtf8([0x61, 0x00, 0x62]) == "a", "utf8 stops at embedded NUL");
+Check(ReadUtf8([]) == "", "utf8 empty string");
+Check(NativeUtf8.ReadCString(nint.Zero) is null, "utf8 null pointer returns null");
+Check(Throws<System.Text.DecoderFallbackException>(() => ReadUtf8([0xFF, 0xFE])), "utf8 invalid bytes fail (0xFF 0xFE)");
+Check(Throws<System.Text.DecoderFallbackException>(() => ReadUtf8([0xC0, 0x80])), "utf8 overlong encoding fails");
+Check(Throws<System.Text.DecoderFallbackException>(() => ReadUtf8([0xE2, 0x82])), "utf8 truncated sequence fails");
+Check(Throws<System.Text.DecoderFallbackException>(() => ReadUtf8([0x80])), "utf8 lone continuation byte fails");
+
+// 19. Public API inventory (freeze token for comparison against d56e021).
+List<string> apiLines = [];
+foreach (Type type in exported)
+{
+    foreach (MemberInfo member in type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+        .Where(m => m is MethodInfo or PropertyInfo or ConstructorInfo)
+        .OrderBy(m => m.ToString(), StringComparer.Ordinal))
+    {
+        if (member is MethodInfo { IsSpecialName: true } or MethodInfo { Name: "ToString" or "GetHashCode" or "Equals" or "GetType" })
+        {
+            continue;
+        }
+
+        apiLines.Add($"{type.FullName}::{member}");
+    }
+}
+apiLines.Sort(StringComparer.Ordinal);
+string apiText = string.Join("\n", apiLines);
+Console.WriteLine($"  public api inventory: {apiLines.Count} members, sha256 {Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiText)))}");
+
+// 20. Result privacy: MinigrafResultException must not retain raw result JSON.
+const string ResultSentinel = "M2_5_SECRET_SENTINEL";
+bool resultLeaksSentinel = false;
+try
+{
+    MinigrafResultDecoder.Decode("{\"transacted\":1,\"results\":[[\"" + ResultSentinel + "\"]]}");
+    Check(false, "conflicting-shape result rejected");
+}
+catch (MinigrafResultException ex)
+{
+    resultLeaksSentinel = ex.ToString().Contains(ResultSentinel, StringComparison.Ordinal);
+    Check(true, "conflicting-shape result rejected with MinigrafResultException");
+}
+
+Check(!resultLeaksSentinel, "result exception does not retain raw result JSON");
 
 Console.WriteLine(failures == 0 ? "ALL UNIT TESTS PASSED" : $"{failures} UNIT TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

@@ -131,6 +131,10 @@ try {
             $_ -match 'staging/'
         })
     Check ($forbidden.Count -eq 0) "no forbidden payload (found: $($forbidden -join ', '))"
+
+    # Duplicate entry names make hash checks ambiguous; reject them.
+    $duplicates = @($zip.Entries | Group-Object FullName | Where-Object { $_.Count -gt 1 })
+    Check ($duplicates.Count -eq 0) "no duplicate archive entries (found: $(($duplicates | ForEach-Object Name) -join ', '))"
 }
 finally {
     $zip.Dispose()

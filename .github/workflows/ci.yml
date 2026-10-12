@@ -54,12 +54,20 @@ jobs:
         shell: pwsh
         run: ./eng/Get-Native.ps1 -Rid win-x64
 
+      - name: Stage linux-x64 asset (override wrong-architecture probe)
+        shell: pwsh
+        run: ./eng/Get-Native.ps1 -Rid linux-x64
+
       - name: Pack
         run: dotnet pack src/MinigrafSharp/MinigrafSharp.csproj -c Release -p:MinigrafSharpEnablePack=true -o artifacts/packages
 
       - name: Verify package
         shell: pwsh
         run: ./eng/Verify-Package.ps1
+
+      - name: Package verifier self-test
+        shell: pwsh
+        run: ./eng/Test-PackageVerifier.ps1
 
       - name: Package consumer
         shell: pwsh

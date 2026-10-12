@@ -85,22 +85,61 @@ void CleanupTempDir(string dbPath)
 
 string? previousOverride = Environment.GetEnvironmentVariable(NativeLoader.OverrideVariable);
 
-// 0. Missing asset fails closed. Runs before any successful load.
-Environment.SetEnvironmentVariable(
-    NativeLoader.OverrideVariable,
-    Path.Combine(Path.GetTempPath(), "minigraf-sharp-missing-native.dll"));
-Check(
-    Throws<MinigrafNativeLoadException>(() =>
-    {
-        using var db = MinigrafDatabase.OpenMemory();
-        return db;
-    }),
-    "missing native asset fails closed");
-Environment.SetEnvironmentVariable(NativeLoader.OverrideVariable, previousOverride);
-
-// Locate the staged asset for the remaining probes.
 string rid = NativeLoader.GetRuntimeIdentifier();
 string fileName = NativeLoader.GetNativeFileName(rid);
+
+// 0. Native loader negative matrix. Runs before any successful load so the
+// per-process loader cache is still empty for every case (a failed load does
+// not cache a handle, so the next case retries resolution).
+string loaderTemp = Path.Combine(
+    Path.GetTempPath(), "MinigrafSharp.LoaderMatrix", Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(loaderTemp);
+void ExpectLoadFailure(string label, string overridePath)
+{
+    Environment.SetEnvironmentVariable(NativeLoader.OverrideVariable, overridePath);
+    Check(
+        Throws<MinigrafNativeLoadException>(() =>
+        {
+            using var db = MinigrafDatabase.OpenMemory();
+            return db;
+        }),
+        label);
+    Environment.SetEnvironmentVariable(NativeLoader.OverrideVariable, previousOverride);
+}
+
+try
+{
+    ExpectLoadFailure(
+        "loader: nonexistent file fails closed",
+        Path.Combine(loaderTemp, "does-not-exist.dll"));
+
+    string zeroFile = Path.Combine(loaderTemp, "zero.dll");
+    File.WriteAllBytes(zeroFile, []);
+    ExpectLoadFailure("loader: zero-byte file fails closed", zeroFile);
+
+    string garbageFile = Path.Combine(loaderTemp, "garbage.dll");
+    File.WriteAllBytes(garbageFile, Enumerable.Repeat((byte)0xAB, 4096).ToArray());
+    ExpectLoadFailure("loader: random-byte file fails closed", garbageFile);
+
+    string emptyDir = Path.Combine(loaderTemp, "emptydir");
+    Directory.CreateDirectory(emptyDir);
+    ExpectLoadFailure("loader: directory override without asset fails closed", emptyDir);
+
+    string dirWithName = Path.Combine(loaderTemp, "named");
+    Directory.CreateDirectory(Path.Combine(dirWithName, fileName));
+    ExpectLoadFailure("loader: expected filename as a directory fails closed", dirWithName);
+
+    ExpectLoadFailure(
+        "loader: missing parent directory fails closed",
+        Path.Combine(loaderTemp, "no-such-parent", fileName));
+}
+finally
+{
+    Environment.SetEnvironmentVariable(NativeLoader.OverrideVariable, previousOverride);
+    try { Directory.Delete(loaderTemp, recursive: true); } catch { }
+}
+
+// Locate the staged asset for the remaining probes.
 string asset = "";
 foreach (string candidate in NativeLoader.GetCandidatePaths(rid, fileName))
 {
@@ -804,6 +843,240 @@ using (var mdb = MinigrafDatabase.OpenMemory())
     MinigrafQueryResult mq = (MinigrafQueryResult)mdb.Execute(
         "(query [:find ?v :where [:m :v ?v]])");
     Check(mq.Rows.Count == 1, "memory database usable around Checkpoint");
+}
+
+// ==================== M2.5 hardening ====================
+
+// 38. Failure/success alternation stress.
+using (var alter = MinigrafDatabase.OpenMemory())
+{
+    int altDiagnosed = 0;
+    int altSucceeded = 0;
+    for (int i = 0; i < 300; i++)
+    {
+        try
+        {
+            alter.Execute("(this is not datalog {{{");
+        }
+        catch (MinigrafExecutionException ex)
+        {
+            if (!string.IsNullOrEmpty(ex.Message))
+            {
+                altDiagnosed++;
+            }
+        }
+
+        MinigrafQueryResult after = (MinigrafQueryResult)alter.Execute(
+            "(query [:find ?x :where [?e :name ?x]])");
+        if (after.Rows.Count >= 0)
+        {
+            altSucceeded++;
+        }
+    }
+
+    Check(altDiagnosed == 300 && altSucceeded == 300,
+        $"alternation: 300 failures diagnosed and 300 later successes ({altDiagnosed}/{altSucceeded})");
+}
+
+// 39. Execute soak: bounded mixed workload.
+const int soakOps = 10000;
+using (var soak = MinigrafDatabase.OpenMemory())
+{
+    int ok = 0;
+    int fail = 0;
+    for (int i = 0; i < soakOps; i++)
+    {
+        switch (i % 5)
+        {
+            case 0:
+                soak.ExecuteRaw($"(transact [[:e{i} :n {i}]])");
+                ok++;
+                break;
+            case 1:
+                soak.Execute("(query [:find ?n :where [?e :n ?n]])");
+                ok++;
+                break;
+            case 2:
+                soak.ExecuteRaw("(query [:find ?n :where [?e :n ?n]])");
+                ok++;
+                break;
+            case 3:
+                try
+                {
+                    soak.Execute("(invalid datalog {{{");
+                }
+                catch (MinigrafExecutionException)
+                {
+                    fail++;
+                }
+                break;
+            default:
+                soak.Execute($"(transact [[:m{i % 97} :v \"s{i}\"]])");
+                ok++;
+                break;
+        }
+    }
+
+    Check(ok == 8000 && fail == 2000, $"execute soak: {soakOps} mixed ops ({ok} ok / {fail} fail)");
+}
+
+// 40. Lifecycle stress: 5000 in-memory open/dispose cycles + bounded handle growth.
+Process current = Process.GetCurrentProcess();
+current.Refresh();
+int handlesBefore = current.HandleCount;
+for (int i = 0; i < 5000; i++)
+{
+    using var cycleDb = MinigrafDatabase.OpenMemory();
+    if (i == 0)
+    {
+        cycleDb.Execute("(query [:find ?x :where [?e :n ?x]])");
+    }
+}
+
+GC.Collect();
+GC.WaitForPendingFinalizers();
+GC.Collect();
+current.Refresh();
+int handlesAfter = current.HandleCount;
+Check(true, "lifecycle: 5000 in-memory open/dispose cycles complete");
+Check(handlesAfter - handlesBefore < 256,
+    $"lifecycle: handle growth bounded ({handlesBefore} -> {handlesAfter}, delta {handlesAfter - handlesBefore})");
+
+// 41. File-backed lifecycle + persistence stress (accumulating, verified on final reopen).
+string lifePath = NewTempDbPath("life.db");
+try
+{
+    const int fileCycles = 200;
+    for (int i = 0; i < fileCycles; i++)
+    {
+        using var wdb = MinigrafDatabase.Open(lifePath);
+        wdb.Execute($"(transact [[:c{i} :v {i}]])");
+        wdb.Checkpoint();
+    }
+
+    using var rdb = MinigrafDatabase.Open(lifePath);
+    MinigrafQueryResult accumulated = (MinigrafQueryResult)rdb.Execute(
+        "(query [:find ?v :where [?e :v ?v]])");
+    Check(accumulated.Rows.Count == fileCycles,
+        $"persistence: {fileCycles} accumulating write/checkpoint/reopen cycles all visible ({accumulated.Rows.Count})");
+}
+finally
+{
+    CleanupTempDir(lifePath);
+}
+
+// 42. Independent databases in parallel: no handle mix-up, no result cross-talk.
+int multiErrors = 0;
+Parallel.For(0, 8, index =>
+{
+    using var db = MinigrafDatabase.OpenMemory();
+    for (int i = 0; i < 200; i++)
+    {
+        db.Execute($"(transact [[:d{index} :v {i}]])");
+        MinigrafQueryResult view = (MinigrafQueryResult)db.Execute(
+            "(query [:find ?v :where [?e :v ?v]])");
+        if (view.Rows.Count != i + 1)
+        {
+            Interlocked.Increment(ref multiErrors);
+        }
+    }
+});
+Check(multiErrors == 0, "parallel: 8 independent databases stay isolated (no cross-talk)");
+
+// 43. Same-handle concurrency stress.
+using (var shared = MinigrafDatabase.OpenMemory())
+{
+    int okCount = 0;
+    int failCount = 0;
+    int unexpected = 0;
+    Parallel.For(0, 8, task =>
+    {
+        for (int i = 0; i < 150; i++)
+        {
+            if (i % 2 == 0)
+            {
+                shared.ExecuteRaw($"(transact [[:s{task} :v {i}]])");
+                Interlocked.Increment(ref okCount);
+            }
+            else
+            {
+                try
+                {
+                    shared.Execute("(bad datalog {{{");
+                    Interlocked.Increment(ref unexpected);
+                }
+                catch (MinigrafExecutionException)
+                {
+                    Interlocked.Increment(ref failCount);
+                }
+            }
+        }
+    });
+    Check(okCount == 600 && failCount == 600 && unexpected == 0,
+        $"same-handle concurrency: {okCount} ok / {failCount} diagnosed / {unexpected} unexpected");
+}
+
+// 44. Dispose race: operations racing Dispose must never crash or use freed memory.
+int disposeUnsafe = 0;
+for (int round = 0; round < 20; round++)
+{
+    var raceDb = MinigrafDatabase.OpenMemory();
+    using var start = new ManualResetEventSlim(false);
+    var workers = new Thread[4];
+    for (int w = 0; w < workers.Length; w++)
+    {
+        workers[w] = new Thread(() =>
+        {
+            start.Wait();
+            for (int i = 0; i < 250; i++)
+            {
+                try
+                {
+                    raceDb.ExecuteRaw("(query [:find ?x :where [?e :n ?x]])");
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (Exception)
+                {
+                    Interlocked.Increment(ref disposeUnsafe);
+                }
+            }
+        });
+        workers[w].Start();
+    }
+
+    start.Set();
+    raceDb.Dispose();
+    foreach (Thread worker in workers)
+    {
+        worker.Join();
+    }
+}
+Check(disposeUnsafe == 0, "dispose race: 20 rounds, only ObjectDisposedException, no unsafe failure");
+
+// 45. Privacy sentinels (execution path). Native diagnostics may echo caller
+// input; record the exact behavior rather than assuming.
+const string Sentinel = "M2_5_SECRET_SENTINEL";
+using (var priv = MinigrafDatabase.OpenMemory())
+{
+    priv.Execute($"""(transact [[:p :v "{Sentinel}"]])""");
+    MinigrafQueryResult privRead = (MinigrafQueryResult)priv.Execute(
+        "(query [:find ?v :where [:p :v ?v]])");
+    Check(privRead.Rows[0][0].GetString() == Sentinel, "privacy: sentinel value stored and read back");
+
+    bool executionLeaksSentinel = false;
+    try
+    {
+        priv.Execute($"(totally invalid statement {Sentinel} {{{{)");
+    }
+    catch (MinigrafExecutionException ex)
+    {
+        executionLeaksSentinel = ex.ToString().Contains(Sentinel, StringComparison.Ordinal);
+    }
+
+    Console.WriteLine($"  privacy: execution-exception echoes caller sentinel = {executionLeaksSentinel} (native diagnostic behavior)");
+    Check(true, "privacy: execution exception inspected");
 }
 
 Console.WriteLine(failures == 0 ? "ALL INTEGRATION TESTS PASSED" : $"{failures} INTEGRATION TEST(S) FAILED");

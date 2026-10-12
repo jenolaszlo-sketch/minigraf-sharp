@@ -163,6 +163,25 @@ try {
     else {
         Fail "AOT execution output (exit $($run.ExitCode); got: $runText)"
     }
+
+    # Negative: remove the deployed native from a copy; must fail closed, not crash.
+    $negDir = Join-Path $tempRoot "aot-negative"
+    Copy-Item -Path $publishDir -Destination $negDir -Recurse -Force
+    Remove-Item -LiteralPath (Join-Path $negDir $nativeName) -Force
+    $negExe = Get-ChildItem -Path $negDir -Filter "MinigrafSharp.AotSmoke*" |
+        Where-Object { $_.Extension -in @(".exe", "") } | Select-Object -First 1
+    if ($null -eq $negExe) {
+        Fail "AOT negative copy executable present"
+    }
+    else {
+        $negRun = Invoke-Native $negExe.FullName @()
+        if ($negRun.ExitCode -ne 0 -and $negRun.Text -match "MinigrafNativeLoadException") {
+            Pass "AOT missing native fails closed"
+        }
+        else {
+            Fail "AOT missing native (exit $($negRun.ExitCode); got: $($negRun.Text))"
+        }
+    }
 }
 finally {
     $env:NUGET_PACKAGES = $null

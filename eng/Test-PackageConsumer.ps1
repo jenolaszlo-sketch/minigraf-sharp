@@ -59,6 +59,32 @@ function Invoke-Native {
     return [PSCustomObject]@{ Text = $text; ExitCode = $code }
 }
 
+function Invoke-ConsumerExe {
+    # Runs the built consumer executable with a chosen working directory and
+    # environment overrides, then restores both.
+    param([string]$Exe, [string]$WorkDir, [hashtable]$ExtraEnv)
+    $saved = @{}
+    if ($ExtraEnv) {
+        foreach ($key in $ExtraEnv.Keys) {
+            $saved[$key] = [System.Environment]::GetEnvironmentVariable($key)
+            [System.Environment]::SetEnvironmentVariable($key, $ExtraEnv[$key])
+        }
+    }
+    $previous = Get-Location
+    try {
+        Set-Location -LiteralPath $WorkDir
+        return (Invoke-Native $Exe @())
+    }
+    finally {
+        Set-Location $previous
+        if ($ExtraEnv) {
+            foreach ($key in $ExtraEnv.Keys) {
+                [System.Environment]::SetEnvironmentVariable($key, $saved[$key])
+            }
+        }
+    }
+}
+
 function Get-CurrentRid {
     if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
         if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq [System.Runtime.InteropServices.Architecture]::X64) { return "win-x64" }
@@ -227,6 +253,83 @@ try {
         }
         finally {
             Move-Item -LiteralPath $backup -Destination $deployed -Force
+        }
+
+        if ($tfm -eq "net10.0") {
+            $hardeningExe = (Get-ChildItem -Path $outDir -Filter *.exe | Select-Object -First 1).FullName
+            $hardeningDeployed = $deployed
+        }
+    }
+
+    # --- M2.5 consumer hardening: PATH/cwd contamination and override matrix ---
+    if ($hardeningExe) {
+        Write-Host ""
+        Write-Host "=== consumer hardening ==="
+        $hardeningWork = Join-Path $tempRoot "work"
+        New-Item -ItemType Directory -Path $hardeningWork -Force | Out-Null
+
+        $rogueDir = Join-Path $tempRoot "rogue-path"
+        New-Item -ItemType Directory -Path $rogueDir -Force | Out-Null
+        [System.IO.File]::WriteAllBytes((Join-Path $rogueDir $nativeName), (New-Object byte[] 4096))
+        $savedPath = $env:PATH
+        $env:PATH = $rogueDir + [System.IO.Path]::PathSeparator + $savedPath
+        try { $pathRun = Invoke-Native $hardeningExe @() } finally { $env:PATH = $savedPath }
+        if ($pathRun.ExitCode -eq 0 -and $pathRun.Text -match "Alice") {
+            Pass "PATH rogue $nativeName does not hijack loading"
+        }
+        else {
+            Fail "PATH rogue hijack check (got: $($pathRun.Text))"
+        }
+
+        $rogueCwd = Join-Path $tempRoot "rogue-cwd"
+        New-Item -ItemType Directory -Path $rogueCwd -Force | Out-Null
+        [System.IO.File]::WriteAllBytes((Join-Path $rogueCwd $nativeName), (New-Object byte[] 4096))
+        $cwdRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $rogueCwd -ExtraEnv @{}
+        if ($cwdRun.ExitCode -eq 0 -and $cwdRun.Text -match "Alice") {
+            Pass "cwd rogue $nativeName does not hijack loading (application base wins)"
+        }
+        else {
+            Fail "cwd rogue hijack check (got: $($cwdRun.Text))"
+        }
+
+        $validRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = $hardeningDeployed }
+        if ($validRun.ExitCode -eq 0 -and $validRun.Text -match "Alice") {
+            Pass "override: valid staged asset loads"
+        }
+        else {
+            Fail "override valid (got: $($validRun.Text))"
+        }
+
+        $missingRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = (Join-Path $hardeningWork "nope.dll") }
+        if ($missingRun.ExitCode -ne 0 -and $missingRun.Text -match "MinigrafNativeLoadException") {
+            Pass "override: nonexistent path fails closed (no fallthrough to package)"
+        }
+        else {
+            Fail "override missing (got: $($missingRun.Text))"
+        }
+
+        $corrupt = Join-Path $hardeningWork "corrupt.dll"
+        [System.IO.File]::WriteAllBytes($corrupt, (New-Object byte[] 4096))
+        $corruptRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = $corrupt }
+        if ($corruptRun.ExitCode -ne 0 -and $corruptRun.Text -match "MinigrafNativeLoadException") {
+            Pass "override: corrupt file fails closed"
+        }
+        else {
+            Fail "override corrupt (got: $($corruptRun.Text))"
+        }
+
+        $wrongArch = Join-Path $repoRoot "native/staging/linux-x64/libminigraf.so"
+        if (Test-Path -LiteralPath $wrongArch) {
+            $wrongArchRun = Invoke-ConsumerExe -Exe $hardeningExe -WorkDir $hardeningWork -ExtraEnv @{ MINIGRAFSHARP_NATIVE_PATH = $wrongArch }
+            if ($wrongArchRun.ExitCode -ne 0 -and $wrongArchRun.Text -match "MinigrafNativeLoadException") {
+                Pass "override: wrong-architecture asset fails closed"
+            }
+            else {
+                Fail "override wrong-architecture (got: $($wrongArchRun.Text))"
+            }
+        }
+        else {
+            Write-Host "SKIP: override wrong-architecture (stage linux-x64 to exercise)"
         }
     }
 }
