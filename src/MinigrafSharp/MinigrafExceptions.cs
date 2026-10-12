@@ -70,3 +70,24 @@ public sealed class MinigrafExecutionException : MinigrafException
     {
     }
 }
+
+/// <summary>
+/// Native execution succeeded, but the returned result cannot be
+/// interpreted under the supported MinigrafSharp result contract.
+/// This is a different failure boundary from
+/// <see cref="MinigrafExecutionException"/>: the engine call worked, the
+/// managed decoding did not. The raw JSON is deliberately not attached:
+/// it may contain user database values and must not leak into logs.
+/// </summary>
+public sealed class MinigrafResultException : MinigrafException
+{
+    public MinigrafResultException(string message)
+        : base(message)
+    {
+    }
+
+    public MinigrafResultException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}

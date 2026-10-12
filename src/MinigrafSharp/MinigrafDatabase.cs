@@ -76,6 +76,21 @@ public sealed class MinigrafDatabase : IDisposable
     }
 
     /// <summary>
+    /// Executes one Datalog statement and returns the typed managed result.
+    /// Implemented as <see cref="ExecuteRaw"/> plus managed JSON decoding:
+    /// there is no second native execution path.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="datalog"/> is null.</exception>
+    /// <exception cref="ObjectDisposedException">The database is disposed.</exception>
+    /// <exception cref="MinigrafExecutionException">The engine rejected the statement.</exception>
+    /// <exception cref="MinigrafResultException">The native result has an unsupported shape.</exception>
+    public MinigrafResult Execute(string datalog)
+    {
+        string json = ExecuteRaw(datalog);
+        return MinigrafResultDecoder.Decode(json);
+    }
+
+    /// <summary>
     /// Releases the native database. Idempotent. Waits for any in-flight
     /// execution on this database rather than racing it.
     /// </summary>
