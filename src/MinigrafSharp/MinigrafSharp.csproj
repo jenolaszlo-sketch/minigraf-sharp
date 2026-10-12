@@ -2,9 +2,55 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <IsPackable>false</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <RootNamespace>MinigrafSharp</RootNamespace>
+
+    <PackageId>MinigrafSharp</PackageId>
+    <Version>0.1.0-preview.1</Version>
+    <Title>MinigrafSharp</Title>
+    <Description>An independent .NET binding for Minigraf using the official minigraf-c API.</Description>
+    <PackageProjectUrl>https://github.com/jenolaszlo-sketch/minigraf-sharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jenolaszlo-sketch/minigraf-sharp.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>minigraf;graph;database;datalog;temporal;native</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- Packaging is opt-in: pass -p:MinigrafSharpEnablePack=true. Without it
+         the project is not packable by design, so ordinary builds and tests
+         never produce a package. -->
+    <IsPackable Condition="'$(MinigrafSharpEnablePack)' != 'true'">false</IsPackable>
+    <IsPackable Condition="'$(MinigrafSharpEnablePack)' == 'true'">true</IsPackable>
+
+    <!-- RIDs that are packaged = RIDs qualified by execution. The pack-time
+         target below fails if a listed asset is missing, so a managed-only
+         package cannot be produced silently. To add a RID: qualify it by
+         execution, add its staged <None> item here, add it to
+         MinigrafSharpQualifiedNativeAssets, and update eng/Verify-Package.ps1
+         and docs/packaging.md. -->
+    <MinigrafSharpQualifiedNativeAssets>../../native/staging/win-x64/minigraf.dll</MinigrafSharpQualifiedNativeAssets>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+    <None Include="../../NOTICE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <!-- Native runtime assets: the exact staged files qualification tested,
+       placed at runtimes/<rid>/native/ so NuGet deploys them normally. -->
+  <ItemGroup>
+    <None Include="../../native/staging/win-x64/minigraf.dll"
+          Condition="Exists('../../native/staging/win-x64/minigraf.dll')"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native/" />
+  </ItemGroup>
+
+  <Target Name="MinigrafSharpRequireNativeAssetsForPack"
+          BeforeTargets="GenerateNuspec"
+          Condition="'$(MinigrafSharpEnablePack)' == 'true'">
+    <Error Condition="!Exists('../../native/staging/win-x64/minigraf.dll')"
+           Text="Required qualified native asset native/staging/win-x64/minigraf.dll is missing. Run eng/Get-Native.ps1 -Rid win-x64 before packing." />
+  </Target>
 </Project>
