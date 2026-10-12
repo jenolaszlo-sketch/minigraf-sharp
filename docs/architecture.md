@@ -1,4 +1,4 @@
-# Architecture (M1a)
+# Architecture (M1b)
 
 ```text
 consumer
@@ -56,6 +56,24 @@ the execute and last-error C calls. This gate is a correctness requirement
 around the C error contract, not a performance abstraction; independent
 databases still proceed in parallel (no global lock). `Dispose` takes the
 same gate, so it waits for an in-flight call instead of racing it.
+
+## Typed decoding (M1b)
+
+```text
+native JSON
+    |
+ExecuteRaw (proven M1a boundary, unchanged)
+    |
+managed decoder (internal MinigrafResultDecoder, System.Text.Json)
+    |
+immutable typed results (MinigrafResult hierarchy)
+```
+
+`Execute()` is `ExecuteRaw()` plus decoding: no second native path, no
+reimplemented ownership. The decoder retains no `JsonDocument` and never
+exposes `JsonElement`; rows and variable lists are immutable snapshots.
+Malformed or ambiguous native results fail with `MinigrafResultException`,
+distinct from `MinigrafExecutionException` (engine rejected the call).
 
 - No native handles are exposed publicly (`docs` unit test
   `no IntPtr/SafeHandle in public signatures` enforces this).

@@ -105,8 +105,8 @@ Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged from M0
 
 `dotnet run --project tests/MinigrafSharp.IntegrationTests -c Release --no-build -f <tfm>`:
 
-- net8.0: 28/28 PASS, exit 0.
-- net10.0: 28/28 PASS, exit 0.
+- net8.0: 27/27 PASS, exit 0.
+- net10.0: 27/27 PASS, exit 0.
 - M0 checks (11) all still pass, unchanged.
 - New M1a checks (17): null datalog rejected (`ArgumentNullException`);
   disposed `ExecuteRaw` throws `ObjectDisposedException`; transact returns
@@ -141,3 +141,77 @@ gate. None of these were added: `Execute()`, typed results,
 `MinigrafQueryResult`, `MinigrafRow`, `MinigrafValue`, `Checkpoint()`,
 `Open(path)`, persistence, temporal helpers, prepared queries,
 transactions, options, async.
+
+---
+
+# M1b evidence
+
+Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged
+(`minigraf.dll` SHA-256 `C534DD26…E21BC`). Native interop untouched
+(`git diff` on `Interop/NativeMethods.cs`, `Native/`, `NativeUtf8.cs` is
+empty for M1b); `Execute()` is `ExecuteRaw()` plus managed decoding.
+
+Upstream representations verified against pinned v2.0.5 sources before
+coding: `TxId = u64` (`src/graph/types.rs`), `Value::Integer(i64)` /
+`Float(f64)` / `Boolean(bool)`, C serialization in `minigraf-c/src/lib.rs`
+(`{"transacted":…}`, `{"retracted":…}`, `{"ok":true}`,
+`{"variables":…,"results":…}`, Ref/Keyword→string, non-finite float→null).
+
+## Build
+
+- `dotnet build MinigrafSharp.slnx -c Release`: succeeded, `net8.0` +
+  `net10.0` for all 4 projects, 0 warnings, 0 errors.
+
+## Unit tests (decoder direct, no native)
+
+`dotnet run --project tests/MinigrafSharp.Tests -c Release --no-build -f <tfm>`:
+
+- net8.0: 68/68 PASS, exit 0.
+- net10.0: 68/68 PASS, exit 0.
+- 29 retained M0/M1a checks (surface test now pins 14 types, adds
+  `MinigrafResultException` + 8 model types) plus 39 new: transacted /
+  retracted / ok / extra-field tolerance; query shape + positional/named
+  cells; 9-scalar row (string, −5, 0, 42, 3.14, true, false, null,
+  `ü❄` escapes); kind-sensitive equality; 5 wrong-kind accessor throws;
+  TryGetValue hit/miss, `KeyNotFoundException`, `ArgumentOutOfRangeException`,
+  null-variable rejection; `ReadOnlyCollection` immutability; 27/27
+  malformed shapes rejected (`MinigrafResultException`), including
+  conflicting shapes, lone `variables`/`results`, wrong id types, negative
+  and overflowing ids, `ok:false`/`ok:null`, width mismatch, duplicate
+  variables, nested values, integer overflow past i64.
+
+## Integration tests (real engine via Execute())
+
+`dotnet run --project tests/MinigrafSharp.IntegrationTests -c Release --no-build -f <tfm>`:
+
+- net8.0: 46/46 PASS, exit 0.
+- net10.0: 46/46 PASS, exit 0.
+- 27 retained checks plus 19 new: transact→`MinigrafTransactionResult`;
+  query rows with `Kind`/`GetString`; engine integer 30, −7, float 4.5,
+  true/false all exact; `nil` transacts and decodes to `Null` (engine
+  supports the literal); retract→`MinigrafRetractionResult` and the fact
+  leaves the current view; rule definition→`MinigrafOkResult.Instance`;
+  two-variable row positional/named agreement, miss vs `KeyNotFound`;
+  `Zürich ❄ 日本語 🙂` through `Execute()`; null/disposed/malformed
+  boundaries preserved distinctly (malformed Datalog is
+  `MinigrafExecutionException`, never `MinigrafResultException`).
+
+## QuickStart
+
+- net8.0 and net10.0: prints `Alice` via typed `Execute()`, exit 0.
+
+## Format
+
+- `dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore`
+  passes, exit 0.
+
+## Scope confirmation (M1b)
+
+Added: `Execute(string)`, `MinigrafResult` hierarchy,
+`MinigrafRow`/`MinigrafValue`/`MinigrafValueKind`,
+`MinigrafResultException`, internal `MinigrafResultDecoder`. RawResult is
+deliberately not attached to the exception (database values must not leak
+into logs). None of these were added: `Checkpoint()`, `Open(path)`,
+persistence, prepared queries, transactions, open options, async APIs.
+`Ref`/`Keyword` decode as String and non-finite floats as Null, documented
+as inherited C-boundary limits.

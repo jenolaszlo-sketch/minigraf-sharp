@@ -1,4 +1,4 @@
-# Native boundary (M1a)
+# Native boundary (M1b)
 
 Pinned baseline: Minigraf core `v2.0.5`
 (`a861e551162623c8f4752f94daf5b637543f8358`), minigraf-c `v2.0.5`
@@ -36,6 +36,26 @@ M1a additionally binds, exactly matching the pinned header:
 
 `Checkpoint` is not bound (M1c owns it).
 
+## Typed decoding happens after the boundary (M1b)
+
+Managed decoding runs on the already-copied, already-freed string: no
+native ownership rule changed for M1b. Two upstream flattening limits are
+inherited as documented semantics, not repaired:
+
+- Native `Ref` and `Keyword` values serialize as JSON strings, so they
+  decode as `MinigrafValueKind.String`. A string is a string until the
+  upstream C boundary exposes richer types; the wrapper never infers refs
+  from UUID shapes or keywords from `:` prefixes.
+- Native non-finite floats (`NaN`, `±Infinity`) serialize as JSON null
+  (`Number::from_f64(...).unwrap_or(Null)` in minigraf-c v2.0.5), so they
+  decode as `MinigrafValueKind.Null`, indistinguishable from native null.
+
+Upstream representations this documents against (pinned v2.0.5 source):
+`TxId = u64` (transaction ids), `Value::Integer(i64)`,
+`Value::Float(f64)`, `Value::Boolean(bool)`, result JSON shapes
+`{"transacted":…}`, `{"retracted":…}`, `{"ok":true}`,
+`{"variables":…,"results":…}`.
+
 ## Ownership
 
 - `minigraf_open_in_memory`: non-null result is wrapped in
@@ -64,7 +84,7 @@ architecture, expected filename, probed locations and pinned versions.
 Interop is source-generated `LibraryImport` (Cdecl) with a deterministic
 `DllImportResolver` returning the pre-loaded handle.
 
-## Supported RID (M1a)
+## Supported RID (M1b)
 
 `win-x64` only (`minigraf.dll`, staged by `eng/Get-Native.ps1`, ignored by
 git). Upstream also publishes `linux-x64`, `linux-arm64` and macOS

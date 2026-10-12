@@ -18,3 +18,8 @@ package and never copy the upstream Minigraf version number.
   native JSON as a managed string with exactly-once `minigraf_string_free`
   ownership, immediate borrowed `minigraf_last_error` capture, strict UTF-8
   handling, `MinigrafExecutionException`, and a per-database operation gate.
+- M1b typed results: `MinigrafDatabase.Execute(string)` decodes raw JSON
+  into an immutable `MinigrafResult` hierarchy (`MinigrafTransactionResult`,
+  `MinigrafRetractionResult`, `MinigrafOkResult`, `MinigrafQueryResult` with
+  `MinigrafRow`/`MinigrafValue`), failing closed with
+  `MinigrafResultException` on malformed shapes.

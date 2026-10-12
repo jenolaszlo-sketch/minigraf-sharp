@@ -6,6 +6,7 @@ completed items are marked complete.
 - [x] M0 - native lifecycle (solution, pinned baseline, `OpenMemory()` smoke)
 - [x] M1a - raw execution (`ExecuteRaw`, owned/borrowed string ownership,
   error capture, per-database gate)
+- [x] M1b - typed result decoding (`Execute`, result/row/value model, strict decoder)
 - [ ] M1b - typed result decoding
 - [ ] M1c - `Open(path)` + `Checkpoint` + persistence/reopen
 - [ ] M1d - temporal/Datalog fixtures + concurrency/known-issue evidence
