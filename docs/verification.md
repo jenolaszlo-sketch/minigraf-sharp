@@ -1,7 +1,8 @@
-# Verification (M0)
+# Verification (M0 + M1a)
 
 Executed evidence only. All commands run from the repository root on the
-development machine unless noted.
+development machine unless noted. M0 evidence is retained below; M1a
+evidence follows it.
 
 ## Environment
 
@@ -78,3 +79,65 @@ no `Open(path)`, no result model, no transactions/options/async/LINQ.
 Public types are exactly `MinigrafDatabase`, `MinigrafException`,
 `MinigrafOpenException`, `MinigrafNativeLoadException` (the last two are the
 minimum needed for M0 failure paths).
+
+---
+
+# M1a evidence
+
+Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged from M0
+(`minigraf.dll` SHA-256 `C534DD26…E21BC`).
+
+## Build
+
+- `dotnet build MinigrafSharp.slnx -c Release`: succeeded, `net8.0` +
+  `net10.0` for all 4 projects, 0 warnings, 0 errors.
+
+## Unit tests
+
+`dotnet run --project tests/MinigrafSharp.Tests -c Release --no-build -f <tfm>`:
+
+- net8.0: 29/29 PASS, exit 0.
+- net10.0: 29/29 PASS, exit 0.
+- Change from M0: public-surface test now expects exactly the 5 M1a types
+  (adds `MinigrafExecutionException`); all other checks unchanged.
+
+## Integration tests (real pinned engine)
+
+`dotnet run --project tests/MinigrafSharp.IntegrationTests -c Release --no-build -f <tfm>`:
+
+- net8.0: 28/28 PASS, exit 0.
+- net10.0: 28/28 PASS, exit 0.
+- M0 checks (11) all still pass, unchanged.
+- New M1a checks (17): null datalog rejected (`ArgumentNullException`);
+  disposed `ExecuteRaw` throws `ObjectDisposedException`; transact returns
+  non-empty JSON with a `transacted` property (observed live shape, e.g.
+  `{"transacted":1791768479534}` — a transaction id, not `1`); query raw
+  JSON contains `Alice`; `Zürich ❄ 日本語 🙂` round-trips exactly
+  (asserted on `JsonDocument`-decoded values, robust to JSON escaping);
+  malformed Datalog throws `MinigrafExecutionException` with a non-empty
+  native diagnostic; 50 repeated failures all diagnosed; valid call
+  succeeds after failures; 20 alternating invalid/valid rounds keep the
+  handle usable; 1000 mixed transact/query calls succeed (owned-string
+  free on every success path); error-capture race of 8×120 alternating
+  valid/invalid on one handle: 480/480 valid succeed, 480/480 failures
+  diagnosed, 0 empty diagnostics, 0 unexpected outcomes.
+
+## QuickStart
+
+- net8.0 and net10.0: prints the raw transact JSON (e.g.
+  `{"transacted":1791768568862}`), exit 0.
+
+## Format
+
+- `dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore`
+  passes, exit 0.
+
+## Scope confirmation (M1a)
+
+Added: `ExecuteRaw(string)`, `MinigrafExecutionException`, internal
+`minigraf_execute` / `minigraf_string_free` / `minigraf_last_error`
+declarations, internal strict-UTF-8 copy helper, per-database operation
+gate. None of these were added: `Execute()`, typed results,
+`MinigrafQueryResult`, `MinigrafRow`, `MinigrafValue`, `Checkpoint()`,
+`Open(path)`, persistence, temporal helpers, prepared queries,
+transactions, options, async.

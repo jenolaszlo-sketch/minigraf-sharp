@@ -14,3 +14,7 @@ package and never copy the upstream Minigraf version number.
 - Internal `LibraryImport` interop for `minigraf_open_in_memory` / `minigraf_close`.
 - Public `MinigrafDatabase.OpenMemory()` lifecycle with `SafeHandle` ownership.
 - M0 unit, integration and QuickStart verification.
+- M1a raw Datalog execution: `MinigrafDatabase.ExecuteRaw(string)` returns
+  native JSON as a managed string with exactly-once `minigraf_string_free`
+  ownership, immediate borrowed `minigraf_last_error` capture, strict UTF-8
+  handling, `MinigrafExecutionException`, and a per-database operation gate.

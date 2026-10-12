@@ -1,4 +1,4 @@
-# Native boundary (M0)
+# Native boundary (M1a)
 
 Pinned baseline: Minigraf core `v2.0.5`
 (`a861e551162623c8f4752f94daf5b637543f8358`), minigraf-c `v2.0.5`
@@ -20,14 +20,36 @@ const char *minigraf_last_error(MiniGrafDb *handle);
 
 M0 binds only `minigraf_open_in_memory` (returns owned handle, NULL on
 error) and `minigraf_close` (releases one owned handle, called exactly once
-from `SafeHandle.ReleaseHandle`). `Execute`, `Checkpoint` and error-string
-handling arrive in M1.
+from `SafeHandle.ReleaseHandle`).
+
+M1a additionally binds, exactly matching the pinned header:
+
+- `minigraf_execute(handle, datalog)`: `SafeHandle` parameter keeps the
+  database alive for the call; Datalog input marshals as UTF-8
+  (`StringMarshalling.Utf8`, never ANSI/codepage). Non-null result is
+  caller-owned; NULL means failure.
+- `minigraf_string_free(s)`: releases only `minigraf_execute` results,
+  exactly once per success, in `finally`; NULL is safe.
+- `minigraf_last_error(handle)`: borrowed, copied immediately after a
+  failed execute before any other call on that handle, never freed; may
+  itself be NULL (deterministic fallback message, never success).
+
+`Checkpoint` is not bound (M1c owns it).
 
 ## Ownership
 
 - `minigraf_open_in_memory`: non-null result is wrapped in
   `SafeMinigrafDatabaseHandle`; NULL becomes `MinigrafOpenException`
   (minigraf-c exposes no error handle for failed opens).
+- `minigraf_execute` result: owned, copied to managed memory with strict
+  UTF-8 decoding, freed with `minigraf_string_free` exactly once even if
+  conversion throws. Never `Marshal.FreeHGlobal`/`FreeCoTaskMem`,
+  `NativeMemory.Free`, CRT `free`, or any allocator but the paired native
+  free from the retained library.
+- `minigraf_last_error`: borrowed, copied immediately, never freed.
+  The managed per-database gate keeps each failed-execute plus error-copy
+  pair atomic against sibling calls on the same handle; the native mutex
+  alone does not cover that gap.
 - `minigraf_close`: runs once per handle on disposal; disposal is idempotent.
 - The loaded library is never freed for the process lifetime.
 
@@ -42,7 +64,7 @@ architecture, expected filename, probed locations and pinned versions.
 Interop is source-generated `LibraryImport` (Cdecl) with a deterministic
 `DllImportResolver` returning the pre-loaded handle.
 
-## Supported RID (M0)
+## Supported RID (M1a)
 
 `win-x64` only (`minigraf.dll`, staged by `eng/Get-Native.ps1`, ignored by
 git). Upstream also publishes `linux-x64`, `linux-arm64` and macOS
