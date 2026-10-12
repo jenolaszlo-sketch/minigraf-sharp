@@ -38,6 +38,51 @@ static bool Throws<TException>(Func<object?> action)
     }
 }
 
+static string NewTempDbPath(string fileName)
+{
+    string dir = Path.Combine(
+        Path.GetTempPath(), "MinigrafSharp.Tests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(dir);
+    return Path.Combine(dir, fileName);
+}
+
+static void DeleteTempDir(string dbPath)
+{
+    string? dir = Path.GetDirectoryName(dbPath);
+    if (dir is null)
+    {
+        return;
+    }
+
+    for (int attempt = 0; attempt < 5; attempt++)
+    {
+        try
+        {
+            Directory.Delete(dir, recursive: true);
+            return;
+        }
+        catch (IOException) when (attempt < 4)
+        {
+            Thread.Sleep(100);
+        }
+    }
+
+    // Final attempt surfaces a leaked-handle failure instead of hiding it.
+    Directory.Delete(dir, recursive: true);
+}
+
+void CleanupTempDir(string dbPath)
+{
+    try
+    {
+        DeleteTempDir(dbPath);
+    }
+    catch (Exception ex)
+    {
+        Check(false, $"cleanup released files for {Path.GetFileName(dbPath)} ({ex.GetType().Name}: {ex.Message})");
+    }
+}
+
 string? previousOverride = Environment.GetEnvironmentVariable(NativeLoader.OverrideVariable);
 
 // 0. Missing asset fails closed. Runs before any successful load.
@@ -521,6 +566,245 @@ catch (MinigrafResultException)
     execFailed = false;
 }
 Check(execFailed, "malformed Datalog is execution failure, not result failure");
+
+// 27. New file-backed database is created on open; files appear beside the path.
+string newPath = NewTempDbPath("new.db");
+try
+{
+    using (var fdb = MinigrafDatabase.Open(newPath))
+    {
+        fdb.Execute("""(transact [[:alice :name "Alice"]])""");
+        MinigrafQueryResult found = (MinigrafQueryResult)fdb.Execute(
+            "(query [:find ?name :where [?e :name ?name]])");
+        Check(found.Rows.Count == 1, "file-backed Execute works");
+        string raw = fdb.ExecuteRaw("(query [:find ?name :where [?e :name ?name]])");
+        Check(raw.Contains("Alice", StringComparison.Ordinal), "file-backed ExecuteRaw works");
+    }
+    string? newDir = Path.GetDirectoryName(newPath);
+    string[] created = newDir is null ? [] : Directory.GetFiles(newDir);
+    Console.WriteLine($"  files after file-backed open: {string.Join(", ", created.Select(Path.GetFileName))}");
+    Check(created.Length != 0, "file-backed open creates files");
+}
+finally
+{
+    CleanupTempDir(newPath);
+}
+
+// 28. Core persistence: write, checkpoint, close, reopen, read.
+string persistPath = NewTempDbPath("persist.db");
+try
+{
+    using (var wdb = MinigrafDatabase.Open(persistPath))
+    {
+        wdb.Execute("""(transact [[:alice :name "Alice"]])""");
+        wdb.Checkpoint();
+    }
+    using (var rdb = MinigrafDatabase.Open(persistPath))
+    {
+        MinigrafQueryResult reopened = (MinigrafQueryResult)rdb.Execute(
+            "(query [:find ?name :where [?e :name ?name]])");
+        Check(reopened.Rows.Count == 1 && reopened.Rows[0]["?name"].GetString() == "Alice",
+            "write/checkpoint/close/reopen preserves state");
+    }
+}
+finally
+{
+    CleanupTempDir(persistPath);
+}
+
+// 29. Normal close without explicit checkpoint still persists (WAL replay on open).
+string walPath = NewTempDbPath("wal.db");
+try
+{
+    using (var wdb = MinigrafDatabase.Open(walPath))
+    {
+        wdb.Execute("""(transact [[:bob :name "Bob"]])""");
+    }
+    using (var rdb = MinigrafDatabase.Open(walPath))
+    {
+        MinigrafQueryResult replayed = (MinigrafQueryResult)rdb.Execute(
+            "(query [:find ?name :where [?e :name ?name]])");
+        Check(replayed.Rows.Count == 1 && replayed.Rows[0]["?name"].GetString() == "Bob",
+            "close without checkpoint still persists (observed, not a crash guarantee)");
+    }
+}
+finally
+{
+    CleanupTempDir(walPath);
+}
+
+// 30. Checkpoint is wired: succeeds mid-session, data visible before and after reopen.
+string cpPath = NewTempDbPath("checkpoint.db");
+try
+{
+    using (var wdb = MinigrafDatabase.Open(cpPath))
+    {
+        wdb.Execute("""(transact [[:cp :v 1]])""");
+        wdb.Checkpoint();
+        MinigrafQueryResult sameSession = (MinigrafQueryResult)wdb.Execute(
+            "(query [:find ?v :where [:cp :v ?v]])");
+        Check(sameSession.Rows.Count == 1, "checkpoint succeeds mid-session");
+    }
+    using (var rdb = MinigrafDatabase.Open(cpPath))
+    {
+        MinigrafQueryResult afterCp = (MinigrafQueryResult)rdb.Execute(
+            "(query [:find ?v :where [:cp :v ?v]])");
+        Check(afterCp.Rows.Count == 1 && afterCp.Rows[0][0].GetInt64() == 1,
+            "checkpointed state survives reopen");
+    }
+}
+finally
+{
+    CleanupTempDir(cpPath);
+}
+
+// 31. Multiple reopen cycles preserve accumulated state.
+string cyclePath = NewTempDbPath("cycle.db");
+try
+{
+    using (var db1 = MinigrafDatabase.Open(cyclePath))
+    {
+        db1.Execute("""(transact [[:a :v "A"]])""");
+        db1.Checkpoint();
+    }
+    using (var db2 = MinigrafDatabase.Open(cyclePath))
+    {
+        MinigrafQueryResult q1 = (MinigrafQueryResult)db2.Execute(
+            "(query [:find ?v :where [?e :v ?v]])");
+        Check(q1.Rows.Count == 1, "first reopen sees A");
+        db2.Execute("""(transact [[:b :v "B"]])""");
+        db2.Checkpoint();
+    }
+    using (var db3 = MinigrafDatabase.Open(cyclePath))
+    {
+        MinigrafQueryResult q2 = (MinigrafQueryResult)db3.Execute(
+            "(query [:find ?v :where [?e :v ?v]])");
+        Check(q2.Rows.Count == 2, "second reopen sees A + B");
+    }
+}
+finally
+{
+    CleanupTempDir(cyclePath);
+}
+
+// 32. Empty database reopens; empty queries stay empty.
+string emptyPath = NewTempDbPath("empty.db");
+try
+{
+    using (var edb = MinigrafDatabase.Open(emptyPath))
+    {
+        edb.Checkpoint();
+    }
+    using (var rdb = MinigrafDatabase.Open(emptyPath))
+    {
+        MinigrafQueryResult empty = (MinigrafQueryResult)rdb.Execute(
+            "(query [:find ?name :where [?e :name ?name]])");
+        Check(empty.Rows.Count == 0, "empty database reopens with empty results");
+    }
+}
+finally
+{
+    CleanupTempDir(emptyPath);
+}
+
+// 33. Non-ASCII file path opens (UTF-8, not the ANSI code page).
+string uniPath = NewTempDbPath("minigraf-Žluťoučký-日本語.db");
+try
+{
+    using (var wdb = MinigrafDatabase.Open(uniPath))
+    {
+        wdb.Execute("""(transact [[:u :v "x"]])""");
+        wdb.Checkpoint();
+    }
+    using (var rdb = MinigrafDatabase.Open(uniPath))
+    {
+        MinigrafQueryResult uq = (MinigrafQueryResult)rdb.Execute(
+            "(query [:find ?v :where [:u :v ?v]])");
+        Check(uq.Rows.Count == 1, "unicode path round-trips persistence");
+    }
+}
+finally
+{
+    CleanupTempDir(uniPath);
+}
+
+// 34. Unusable paths fail safely with MinigrafOpenException, never a crash.
+string missingParent = Path.Combine(
+    Path.GetTempPath(), "MinigrafSharp.Tests", Guid.NewGuid().ToString("N"), "no-such-dir", "db.db");
+Check(Throws<MinigrafOpenException>(() => MinigrafDatabase.Open(missingParent)),
+    "missing parent directory fails with MinigrafOpenException");
+string dirAsDb = Path.Combine(Path.GetTempPath(), "MinigrafSharp.Tests", Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(dirAsDb);
+try
+{
+    Check(Throws<MinigrafOpenException>(() => MinigrafDatabase.Open(dirAsDb)),
+        "directory as database path fails with MinigrafOpenException");
+}
+finally
+{
+    Directory.Delete(dirAsDb);
+}
+
+// 35. Same-path double open: observe, then prove the first handle stays usable.
+string doublePath = NewTempDbPath("double.db");
+try
+{
+    using var db1 = MinigrafDatabase.Open(doublePath);
+    db1.Execute("""(transact [[:alice :name "Alice"]])""");
+    try
+    {
+        using var db2 = MinigrafDatabase.Open(doublePath);
+        MinigrafQueryResult q2 = (MinigrafQueryResult)db2.Execute(
+            "(query [:find ?name :where [?e :name ?name]])");
+        Console.WriteLine($"  double-open: second handle accepted, sees {q2.Rows.Count} row(s)");
+    }
+    catch (MinigrafOpenException ex)
+    {
+        Console.WriteLine($"  double-open: second handle rejected (recorded): {ex.Message}");
+    }
+    MinigrafQueryResult stillThere = (MinigrafQueryResult)db1.Execute(
+        "(query [:find ?name :where [?e :name ?name]])");
+    Check(stillThere.Rows.Count == 1, "first handle usable after double-open attempt");
+}
+finally
+{
+    CleanupTempDir(doublePath);
+}
+
+// 36. Checkpoint after disposal never reaches native code.
+string deadPath = NewTempDbPath("dead.db");
+try
+{
+    var cpDead = MinigrafDatabase.Open(deadPath);
+    cpDead.Dispose();
+    Check(Throws<ObjectDisposedException>(() =>
+    {
+        cpDead.Checkpoint();
+        return (object?)null;
+    }), "disposed Checkpoint throws ObjectDisposedException");
+}
+finally
+{
+    CleanupTempDir(deadPath);
+}
+
+// 37. Checkpoint on an in-memory database: observe, then prove usability either way.
+using (var mdb = MinigrafDatabase.OpenMemory())
+{
+    try
+    {
+        mdb.Checkpoint();
+        Console.WriteLine("  checkpoint on memory db: success");
+    }
+    catch (MinigrafCheckpointException ex)
+    {
+        Console.WriteLine($"  checkpoint on memory db: rejected (recorded): {ex.Message}");
+    }
+    mdb.Execute("""(transact [[:m :v 1]])""");
+    MinigrafQueryResult mq = (MinigrafQueryResult)mdb.Execute(
+        "(query [:find ?v :where [:m :v ?v]])");
+    Check(mq.Rows.Count == 1, "memory database usable around Checkpoint");
+}
 
 Console.WriteLine(failures == 0 ? "ALL INTEGRATION TESTS PASSED" : $"{failures} INTEGRATION TEST(S) FAILED");
 return failures == 0 ? 0 : 1;

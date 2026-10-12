@@ -115,6 +115,7 @@ Check(
         new[]
         {
             "MinigrafSharp.MinigrafDatabase",
+            "MinigrafSharp.MinigrafCheckpointException",
             "MinigrafSharp.MinigrafException",
             "MinigrafSharp.MinigrafExecutionException",
             "MinigrafSharp.MinigrafNativeLoadException",
@@ -129,7 +130,7 @@ Check(
             "MinigrafSharp.MinigrafValue",
             "MinigrafSharp.MinigrafValueKind",
         }.Order()),
-    "public types are exactly the M1b surface");
+    "public types are exactly the M1c surface");
 Check(exported.All(t => t.Namespace == "MinigrafSharp"), "no public Interop/Native types");
 bool leaksNative = false;
 foreach (Type type in exported)
@@ -149,6 +150,10 @@ foreach (Type type in exported)
     }
 }
 Check(!leaksNative, "no IntPtr/SafeHandle in public signatures");
+
+// 8. Open() argument validation happens before any native call (no engine needed).
+Check(Throws<ArgumentNullException>(() => MinigrafDatabase.Open(null!)), "Open null rejected");
+Check(Throws<ArgumentException>(() => MinigrafDatabase.Open("")), "Open empty rejected");
 
 // 8. Decoder valid shapes (managed JSON strings, no native engine).
 Check(
