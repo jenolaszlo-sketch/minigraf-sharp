@@ -37,11 +37,9 @@ package and never copy the upstream Minigraf version number.
   public API change and no wrapper workarounds.
 - M2 distribution: `MinigrafSharp` `0.1.0-preview.1` NuGet package
   (`net8.0`/`net10.0` + `runtimes/win-x64/native/minigraf.dll`, no managed
-  dependencies), with `eng/Verify-Package.ps1`, `eng/Test-PackageConsumer.ps1`,
-  `eng/Test-AotConsumer.ps1`, `eng/Test-TrimmedConsumer.ps1`, and an
-  `samples/MinigrafSharp.AotSmoke` sample. `win-x64` is the only packaged
-  and qualified RID; other RIDs stay deferred. No public API change; no
-  NuGet.org publication.
+  dependencies), with `eng/Verify-Package.ps1` and a clean package consumer.
+  `win-x64` is the only packaged and qualified RID; other RIDs stay deferred.
+  No public API change; no NuGet.org publication.
 - M2.5 hardening (`docs/hardening.md`): malformed/hostile result corpus,
   bounded fuzz, strict UTF-8 negatives, execute/lifecycle/persistence stress,
   independent- and same-handle concurrency, dispose race, native loader
@@ -52,3 +50,14 @@ package and never copy the upstream Minigraf version number.
   of leaking `InvalidOperationException`. That content change invalidated
   `0.1.0-preview.1`; the corrected release candidate is `0.1.0-preview.2`,
   requalified end to end. No public API change; no NuGet.org publication.
+- Release infrastructure (`0.1.0-preview.3`): multi-RID CI qualification
+  (`win-x64`, `linux-x64`, `osx-arm64`) that stages and verifies each pinned
+  native asset on its own OS and runs the real-engine suites; the pack job
+  assembles the three-RID package from those exact staging artifacts; clean
+  package consumers run for 3 OS x net8/net10 with NativeAOT on net10.0; and
+  a trusted-publishing `publish.yml` (GitHub OIDC via `NuGet/login@v1`,
+  repository secret `NUGET_USER`, no long-lived API key) plus
+  `verify-published.yml`. AOT/trimming moved into
+  `eng/Test-PackageConsumer.ps1`; `samples/MinigrafSharp.AotSmoke`,
+  `eng/Test-AotConsumer.ps1` and `eng/Test-TrimmedConsumer.ps1` were removed.
+  No public API change; publication is a separate explicit dispatch.

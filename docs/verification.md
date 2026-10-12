@@ -439,11 +439,11 @@ Loading the pinned Linux `libminigraf.so` under the Windows filename via
 
 ## Scope confirmation (M2)
 
-Packaged `win-x64` only (the only RID qualified by execution). Added
-`docs/packaging.md`, three `eng/` verifiers, `samples/MinigrafSharp.AotSmoke`
-(not in the solution; consumes the package), and packaging metadata. No new
-database feature API. No NuGet.org publication, no release tag, no
-Minigraf v3, no M2.5 work.
+Packaged `win-x64` only (at that time the only RID qualified by execution;
+superseded by the preview.3 multi-RID release infrastructure below). Added
+`docs/packaging.md`, `eng/` verifiers, a package-consumer script, and
+packaging metadata. No new database feature API. No NuGet.org publication, no
+release tag, no Minigraf v3.
 
 ---
 
@@ -505,9 +505,12 @@ still pins the same 15 types; API inventory 46 members, sha256
 - `eng/Test-PackageConsumer.ps1`: net8 + net10 install/build/deploy/output;
   missing-native fail-closed; PATH rogue ignored; cwd rogue ignored; override
   valid/nonexistent/corrupt/wrong-arch as documented.
-- `eng/Test-AotConsumer.ps1`: net10 NativeAOT publish + run, 0 warnings,
-  native deployed, plus missing-native negative fail-closed.
-- `eng/Test-TrimmedConsumer.ps1`: net10 trimmed publish + run, 0 warnings.
+- NativeAOT net10 publish + run (0 warnings, native deployed, plus
+  missing-native negative) and trimmed net10 publish + run (0 warnings).
+  These used `eng/Test-AotConsumer.ps1`/`eng/Test-TrimmedConsumer.ps1` and
+  `samples/MinigrafSharp.AotSmoke` at the time; all three were folded into
+  `eng/Test-PackageConsumer.ps1` (`-Aot`/`-Trim`) in the preview.3 release
+  infrastructure below.
 
 ## Privacy, legal, inventory
 
@@ -518,3 +521,48 @@ still pins the same 15 types; API inventory 46 members, sha256
 ## Preview release decision
 
 `PREVIEW RELEASE READY` (see the M2.5 final report). No publication performed.
+
+---
+
+# Release infrastructure (preview.3)
+
+Multi-RID distribution and trusted publishing replace the local-key release
+procedure. `0.1.0-preview.2` remains an unpublished win-x64-only candidate;
+the new candidate is `0.1.0-preview.3`.
+
+## Pipeline
+
+- `.github/workflows/ci.yml`: `format` (ubuntu); `dist` (per RID on its own
+  OS: `windows-latest`/win-x64, `ubuntu-latest`/linux-x64,
+  `macos-latest`/osx-arm64) staging + `eng/Verify-NativeStaging.ps1` + the
+  real-engine unit/integration/qualification suites, uploading
+  `native/staging/<rid>`; `pack` (ubuntu) downloading the three staging
+  artifacts, `eng/Verify-NativeStaging.ps1`, `dotnet pack`, `eng/Verify-Package.ps1`
+  and `eng/Test-PackageVerifier.ps1`, uploading `nupkg`; `consume`
+  (3 OS x net8/net10, NativeAOT on net10.0) running
+  `eng/Test-PackageConsumer.ps1` from the CI-built package.
+- `.github/workflows/publish.yml`: `workflow_dispatch`; validates an exact
+  successful `ci.yml` push run for a release SHA (11 jobs), downloads its
+  immutable `nupkg`, verifies it, and publishes via GitHub OIDC trusted
+  publishing (`NuGet/login@v1`, secret `NUGET_USER`); never rebuilds.
+- `.github/workflows/verify-published.yml`: installs the published version
+  from nuget.org on 3 OS x net8/net10.
+
+## Local validation performed before push (win-x64)
+
+- `eng/Get-Native.ps1` staged all three RIDs; `eng/Verify-NativeStaging.ps1`
+  passed for `linux-x64`, `osx-arm64`, `win-x64` (inventory, hashes, manifest,
+  and container format/architecture: ELF x86-64, Mach-O universal, PE x86-64).
+- `dotnet pack` produced `0.1.0-preview.3` containing all three RIDs;
+  `eng/Verify-Package.ps1` PASS; `eng/Test-PackageVerifier.ps1` PASS
+  (control + 10/10 tamper rejected).
+- `eng/Test-PackageConsumer.ps1 -TargetFramework net8.0` PASS (markers +
+  PATH/cwd/missing-native/override-missing/corrupt/wrong-architecture).
+- `eng/Test-PackageConsumer.ps1 -TargetFramework net10.0 -Aot -Rid win-x64`
+  PASS (NativeAOT publish + run, all markers).
+
+## CI execution
+
+CI run identity (run IDs per job), the qualified `preview.3` package
+SHA-256, and the full RID/consumer/AOT matrix are recorded in the release
+report for the qualifying `ci.yml` run for this commit.

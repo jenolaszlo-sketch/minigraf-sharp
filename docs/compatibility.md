@@ -1,34 +1,34 @@
-# Compatibility (M2)
+# Compatibility
 
 | Layer | Pinned |
 | --- | --- |
 | Minigraf core | `v2.0.5` (`a861e55`) |
 | minigraf-c | `v2.0.5` (`8422f9f`) |
 | C header | `native/include/minigraf.h`, SHA-256 `8603C074…ADE7D` |
-| MinigrafSharp | `0.1.0-preview.2` (M2.5 release candidate) |
+| MinigrafSharp | `0.1.0-preview.3` (qualified release candidate) |
 | Managed TFMs | `net8.0`, `net10.0` |
-| Packaged + qualified RID | `win-x64` (lifecycle, raw/typed execution, file persistence, storage/recovery/temporal qualification) |
+| Packaged + qualified RIDs | `win-x64`, `linux-x64`, `osx-arm64` |
 | Upstream file format | v7 (`src/storage/mod.rs`: `FORMAT_VERSION = 7`) |
 
 ## RID status
 
-Three states are distinguished: **qualified** (executed on that platform),
-**packaged** (shipped in the NuGet package), and **unsupported** (neither).
-M2 packages only what it qualified, so qualified = packaged.
+Three states are distinguished: **qualified** (executed on that platform by
+the `ci.yml` `dist`/`consume` jobs), **packaged** (shipped in the NuGet
+package), and **unsupported** (neither). The package ships exactly the RIDs
+that CI qualified on their own OS, so qualified = packaged.
 
 | RID | Asset source | Packaged | Qualified | NativeAOT | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `win-x64` | upstream windows x86_64 zip | yes | yes | yes (net10.0) | M2 baseline |
-| `linux-x64` | upstream linux x86_64 | no | no | unqualified | deferred: no execution environment |
-| `linux-arm64` | upstream linux aarch64 | no | no | unqualified | deferred: no execution environment |
-| `osx-arm64` | upstream macos universal2 | no | no | unqualified | deferred: no execution environment |
-| `osx-x64` | upstream macos universal2 | no | no | unqualified | deferred: no execution environment |
+| `win-x64` | upstream windows x86_64 zip | yes | yes | yes (net10.0) | lifecycle + execution + persistence + v2 qualification |
+| `linux-x64` | upstream linux x86_64 | yes | yes | yes (net10.0) | CI-qualified on `ubuntu-latest` |
+| `osx-arm64` | upstream macos universal2 | yes | yes | yes (net10.0) | CI-qualified on `macos-latest` |
+| `linux-arm64` | upstream linux aarch64 | no | no | unqualified | deferred: no runner yet |
+| `osx-x64` | upstream macos universal2 | no | no | unqualified | deferred: universal2 asset matches, no runner yet |
 
-The non-`win-x64` assets are hash-recorded in `native/upstream.json` and
-fetchable with `eng/Get-Native.ps1`, but are not packaged or advertised
-until they pass the RID gate (native acquisition, export + architecture
-verification, build/tests, clean package consumer, and NativeAOT where
-claimed) on a real runner. See [packaging.md](packaging.md).
+Every packaged asset is hash-recorded in `native/upstream.json`, staged and
+re-verified by `eng/Verify-NativeStaging.ps1`, and re-checked inside the
+package by `eng/Verify-Package.ps1`. Per-run RID/consumer/AOT results are in
+[verification.md](verification.md). See [packaging.md](packaging.md).
 
 ## Upgrade rules
 

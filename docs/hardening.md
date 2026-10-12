@@ -7,6 +7,12 @@ Detailed command output lives in [verification.md](verification.md).
 
 Baseline compared against: `d56e021`.
 
+> Note: this record describes the M2.5 hardening of the `preview.2` candidate.
+> The AOT/trimming helpers it names (`eng/Test-AotConsumer.ps1`,
+> `eng/Test-TrimmedConsumer.ps1`, `samples/MinigrafSharp.AotSmoke`) were
+> folded into `eng/Test-PackageConsumer.ps1` (`-Aot`/`-Trim`) by the preview.3
+> release infrastructure; see [verification.md](verification.md).
+
 ## Result-decoder defect (fixed)
 
 `MinigrafResultDecoder` documents a closed contract: exactly the shapes

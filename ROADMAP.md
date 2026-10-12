@@ -16,6 +16,11 @@ completed items are marked complete.
 - [x] M2.5 - hardening (`docs/hardening.md`: malformed-result corpus, loader and
   tamper matrices, stress/concurrency/dispose-race, privacy, legal inventory,
   API freeze; one decoder fail-closed fix -> `0.1.0-preview.2`)
+- [x] Release infrastructure - multi-RID CI (`win-x64`, `linux-x64`, `osx-arm64`
+  qualified on their own runners), pack from the exact per-RID staging
+  artifacts, clean consumers (3 OS x net8/net10) with NativeAOT, and a
+  trusted-publishing `publish.yml` (GitHub OIDC, no long-lived key) ->
+  `0.1.0-preview.3`. Publication is a separate explicit dispatch.
 - [ ] M3 - richer native surface (prepared queries, write transactions, open
   options, structured errors; prefer upstream minigraf-c additions)
 - [ ] M4 - agent-memory conveniences, optional and separate from the binding

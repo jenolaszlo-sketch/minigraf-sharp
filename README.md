@@ -6,14 +6,14 @@ an embedded single-file bi-temporal graph database with Datalog queries.
 > MinigrafSharp is an independent .NET binding for Minigraf and is not
 > currently an official Project Minigraf package.
 
-> Status: M2.5 (preview release candidate `0.1.0-preview.2`). Hardened and
-> qualified for `win-x64` (`net8.0`/`net10.0`, NativeAOT and trimming
-> verified). The public API is `MinigrafDatabase.OpenMemory()` /
+> Status: preview release candidate `0.1.0-preview.3`, qualified by CI for
+> `win-x64`, `linux-x64` and `osx-arm64` (`net8.0`/`net10.0`, NativeAOT on
+> net10.0). The public API is `MinigrafDatabase.OpenMemory()` /
 > `Open(string)` plus `ExecuteRaw(string)` returning raw native JSON,
 > `Execute(string)` returning typed `MinigrafResult` values, and
 > `Checkpoint()` for explicit WAL flushes, against the pinned native engine.
-> The package is not yet on NuGet.org; other RIDs are not yet qualified.
-> See [docs/product-spec.md](docs/product-spec.md) and [ROADMAP.md](ROADMAP.md).
+> The package is not yet on NuGet.org. See
+> [docs/product-spec.md](docs/product-spec.md) and [ROADMAP.md](ROADMAP.md).
 
 > MinigrafSharp currently targets Minigraf 2.0.5. The upstream v2 storage
 > engine has known edge cases around specific transaction, temporal, and
