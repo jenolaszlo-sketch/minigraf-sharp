@@ -75,14 +75,19 @@ function New-Tampered([scriptblock]$Mutate, [switch]$DuplicateNative) {
     return $dest
 }
 
+# Run the verifier in a child PowerShell so its `exit` code is captured without
+# terminating this self-test. Use the current host executable so it works with
+# both Windows PowerShell (powershell.exe) and PowerShell 7 (pwsh).
+$psExe = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+
 function Test-Rejected([string]$name, [string]$path) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyScript -PackagePath $path *> $null
+    & $psExe -NoProfile -ExecutionPolicy Bypass -File $verifyScript -PackagePath $path *> $null
     Check ($LASTEXITCODE -ne 0) "tamper rejected: $name"
 }
 
 try {
     # Control: the untampered package must pass.
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyScript -PackagePath $PackagePath *> $null
+    & $psExe -NoProfile -ExecutionPolicy Bypass -File $verifyScript -PackagePath $PackagePath *> $null
     Check ($LASTEXITCODE -eq 0) "control: untampered package passes verification"
 
     Test-Rejected "remove native dll" (New-Tampered { param($d) Remove-Item -LiteralPath (Join-Path $d $nativeEntry) })
