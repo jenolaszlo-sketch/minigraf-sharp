@@ -1,0 +1,61 @@
+name: verify-published
+
+# Installs the exact published version from the public NuGet feed on
+# Windows/Linux/macOS × net8/net10 and runs the clean packaged consumer. Binds
+# to a validated successful ci.yml run so the published bytes can be compared
+# to the qualified artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Qualified full CI run containing the published artifact
+        required: true
+        type: string
+      release_sha:
+        description: Full commit SHA covered by the qualified CI run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  consume:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        tfm: [net8.0, net10.0]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+      - name: Bind to successful CI artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.ci_run_id }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          if ($env:RUN_ID -notmatch '^[0-9]+$' -or $env:RELEASE_SHA -notmatch '^[0-9a-f]{40}$') { throw "invalid release identity" }
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUN_ID" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:RELEASE_SHA -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/ci.yml' -or $run.head_branch -ne 'main' -or $run.event -ne 'push') { throw "not a qualified CI run" }
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts/packages
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+      - run: |
+          $packages = @(Get-ChildItem artifacts/packages/MinigrafSharp.*.nupkg)
+          if ($packages.Count -ne 1) { throw "expected one qualified package" }
+          ./eng/Test-PackageConsumer.ps1 -Package $packages[0].FullName -TargetFramework ${{ matrix.tfm }} -UsePublicFeed

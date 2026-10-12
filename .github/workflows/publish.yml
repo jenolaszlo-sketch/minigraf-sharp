@@ -1,0 +1,148 @@
+name: publish
+
+# Trusted publishing: exchanges GitHub OIDC for a short-lived NuGet key. No
+# long-lived NUGET_API_KEY is stored. The package is downloaded from a
+# validated successful ci.yml run and is never rebuilt here.
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Optional CI run override; blank selects CI for the dispatched commit
+        required: false
+        type: string
+      release_sha:
+        description: Optional SHA override; blank derives it from the dispatch or selected run
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nuget-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'jenolaszlo-sketch/minigraf-sharp'
+    runs-on: ubuntu-latest
+    environment: nuget-production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Resolve release identity
+        id: selection
+        uses: actions/github-script@v9
+        env:
+          REQUESTED_RUN_ID: ${{ inputs.ci_run_id }}
+          REQUESTED_SHA: ${{ inputs.release_sha }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            let runId = (process.env.REQUESTED_RUN_ID || '').trim();
+            let sha = (process.env.REQUESTED_SHA || '').trim();
+            if (runId && (!/^[0-9]+$/.test(runId) || !Number.isSafeInteger(Number(runId)) || Number(runId) < 1))
+              throw new Error('ci_run_id must be a positive numeric run ID');
+            if (!runId) {
+              sha ||= context.sha;
+              if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('release_sha must be a full lowercase commit SHA');
+              const runs = await github.paginate('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+                owner, repo, workflow_id: 'ci.yml', head_sha: sha,
+                branch: 'main', event: 'push', status: 'success', per_page: 100
+              });
+              const eligible = runs.filter(run => run.head_sha === sha && run.head_branch === 'main'
+                && run.event === 'push' && run.status === 'completed' && run.conclusion === 'success');
+              eligible.sort((left, right) => right.run_number - left.run_number || right.id - left.id);
+              if (!eligible.length)
+                throw new Error('No successful CI run for commit ' + sha + '. Wait for its full CI run; older commits are never selected automatically.');
+              runId = String(eligible[0].id);
+            }
+            const { data: run } = await github.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}', { owner, repo, run_id: Number(runId) });
+            sha ||= run.head_sha;
+            if (!/^[0-9a-f]{40}$/.test(sha) || run.head_sha !== sha)
+              throw new Error('CI run SHA differs from the requested release SHA');
+            core.setOutput('ci_run_id', runId);
+            core.setOutput('release_sha', sha);
+      - name: Validate requested release run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.selection.outputs.ci_run_id }}
+          RELEASE_SHA: ${{ steps.selection.outputs.release_sha }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "release_sha must be a full lowercase commit SHA"; exit 1; }
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "ci_run_id must be numeric"; exit 1; }
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")
+          echo "$run" | jq '{status,conclusion,head_sha,event,head_branch,workflow_id,path}'
+          workflow_id=$(jq -r .workflow_id <<<"$run")
+          workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id")
+          test "$(jq -r .path <<<"$workflow")" = ".github/workflows/ci.yml" || { echo "run is not the repository's exact ci.yml workflow"; exit 1; }
+          test "$(jq -r .status <<<"$run")" = "completed" || { echo "CI run is not completed"; exit 1; }
+          test "$(jq -r .conclusion <<<"$run")" = "success" || { echo "CI run did not succeed"; exit 1; }
+          test "$(jq -r .head_sha <<<"$run")" = "$RELEASE_SHA" || { echo "CI run SHA differs from requested release SHA"; exit 1; }
+          test "$(jq -r .event <<<"$run")" = "push" || { echo "release must be covered by a main push run"; exit 1; }
+          test "$(jq -r .head_branch <<<"$run")" = "main" || { echo "release CI run must target main"; exit 1; }
+          jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name,.status,.conclusion] | @tsv')
+          job_count=$(printf '%s\n' "$jobs" | awk 'NF { n++ } END { print n+0 }')
+          test "$job_count" -eq 11 || { echo "expected 11 full-matrix CI jobs, found $job_count"; exit 1; }
+          while IFS=$'\t' read -r name status conclusion; do
+            test "$status" = "completed" && test "$conclusion" = "success" || { echo "CI job failed or incomplete: $name ($status/$conclusion)"; exit 1; }
+          done <<< "$jobs"
+          for spec in 'dist ( 3' 'consume ( 6'; do
+            prefix=${spec% *}; expected=${spec##* }
+            found=$(printf '%s\n' "$jobs" | cut -f1 | grep -Ec "^${prefix//(/\\(}" || true)
+            test "$found" -eq "$expected" || { echo "CI job matrix mismatch for $prefix: expected $expected, found $found"; exit 1; }
+          done
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "ci_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Validated release identity"
+            echo "- Commit: $RELEASE_SHA"
+            echo "- CI run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+            echo "- All 11 full-matrix jobs passed."
+          } >> "$GITHUB_STEP_SUMMARY"
+        id: release
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.release_sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download immutable package artifact from validated CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.release.outputs.ci_run_id }}
+        run: gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name nupkg --dir artifacts/packages
+
+      - name: Verify package
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem artifacts/packages/MinigrafSharp.*.nupkg)
+          if ($packages.Count -ne 1) { throw "Expected exactly one nupkg, got $($packages.Count)" }
+          ./eng/Verify-Package.ps1 -PackagePath $packages[0].FullName
+          $hash = (Get-FileHash $packages[0].FullName -Algorithm SHA256).Hash
+          "Package SHA-256: $hash"
+          "Package SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Exchange GitHub OIDC identity for short-lived NuGet key
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish verified package
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          $packages = @(Get-ChildItem artifacts/packages/MinigrafSharp.*.nupkg)
+          if ($packages.Count -ne 1) { throw "Expected exactly one nupkg" }
+          dotnet nuget push $packages[0].FullName --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { throw "NuGet package push failed ($LASTEXITCODE)" }
