@@ -35,8 +35,8 @@ $upstream = Get-Content -LiteralPath (Join-Path $repoRoot "native/upstream.json"
 function Fail([string]$message) { throw "STAGING-VERIFY: $message" }
 
 $knownRids = @("win-x64", "linux-x64", "osx-arm64")
-$rids = if ($Rid -ne "") { @($Rid) }
-else { @(Get-ChildItem -Directory -LiteralPath $StagingRoot -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Where-Object { $_ -in $knownRids }) }
+[string[]]$rids = @(if ($Rid -ne "") { $Rid }
+    else { Get-ChildItem -Directory -LiteralPath $StagingRoot -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Where-Object { $_ -in $knownRids } })
 if ($rids.Count -eq 0) { Fail "no staged RIDs under $StagingRoot" }
 
 # Reads the first bytes and confirms the container/architecture for a RID.

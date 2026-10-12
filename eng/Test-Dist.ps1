@@ -38,8 +38,8 @@ function Invoke-Native {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-function Run([string]$label, [string[]]$args) {
-    $result = Invoke-Native "dotnet" $args
+function Run([string]$label, [string[]]$dotnetArgs) {
+    $result = Invoke-Native "dotnet" $dotnetArgs
     if ($result.ExitCode -ne 0) { Fail "$label failed ($($result.ExitCode)) :: $($result.Text)" }
     Write-Output "OK $label"
 }
