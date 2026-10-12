@@ -1,0 +1,81 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# M2 CI. Only the win-x64 RID is qualified and exercised here. To qualify
+# linux-x64, linux-arm64, osx-arm64 or osx-x64: add a job on a runner of that
+# platform that stages the matching native asset and runs the same gates, then
+# package that RID and update docs/compatibility.md. Do not advertise a RID
+# before its job executes on that platform.
+jobs:
+  win-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore MinigrafSharp.slnx
+
+      - name: Build
+        run: dotnet build MinigrafSharp.slnx -c Release --no-restore
+
+      - name: Unit tests (net8.0)
+        run: dotnet run --project tests/MinigrafSharp.Tests -c Release --no-build -f net8.0
+
+      - name: Unit tests (net10.0)
+        run: dotnet run --project tests/MinigrafSharp.Tests -c Release --no-build -f net10.0
+
+      - name: Integration tests (net8.0)
+        run: dotnet run --project tests/MinigrafSharp.IntegrationTests -c Release --no-build -f net8.0
+
+      - name: Integration tests (net10.0)
+        run: dotnet run --project tests/MinigrafSharp.IntegrationTests -c Release --no-build -f net10.0
+
+      - name: Qualification tests (net8.0)
+        run: dotnet run --project tests/MinigrafSharp.QualificationTests -c Release --no-build -f net8.0
+
+      - name: Qualification tests (net10.0)
+        run: dotnet run --project tests/MinigrafSharp.QualificationTests -c Release --no-build -f net10.0
+
+      - name: Format verify
+        run: dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore
+
+      - name: Stage native asset
+        shell: pwsh
+        run: ./eng/Get-Native.ps1 -Rid win-x64
+
+      - name: Pack
+        run: dotnet pack src/MinigrafSharp/MinigrafSharp.csproj -c Release -p:MinigrafSharpEnablePack=true -o artifacts/packages
+
+      - name: Verify package
+        shell: pwsh
+        run: ./eng/Verify-Package.ps1
+
+      - name: Package consumer
+        shell: pwsh
+        run: ./eng/Test-PackageConsumer.ps1
+
+      - name: Trimmed consumer
+        shell: pwsh
+        run: ./eng/Test-TrimmedConsumer.ps1
+
+      - name: NativeAOT consumer
+        shell: pwsh
+        run: ./eng/Test-AotConsumer.ps1
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MinigrafSharp-package
+          path: artifacts/packages/*.nupkg
+          if-no-files-found: error
