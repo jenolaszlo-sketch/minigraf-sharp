@@ -1,19 +1,12 @@
 name: publish
 
 # Trusted publishing: exchanges GitHub OIDC for a short-lived NuGet key. No
-# long-lived NUGET_API_KEY is stored. The package is downloaded from a
-# validated successful ci.yml run and is never rebuilt here.
+# long-lived NUGET_API_KEY is stored. Dispatch with no inputs: the release SHA
+# is this workflow's own commit on main, and the CI run is the newest
+# successful ci.yml push run for it. The package is downloaded from that run
+# and never rebuilt here.
 on:
   workflow_dispatch:
-    inputs:
-      ci_run_id:
-        description: Optional CI run override; blank selects CI for the dispatched commit
-        required: false
-        type: string
-      release_sha:
-        description: Optional SHA override; blank derives it from the dispatch or selected run
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -25,7 +18,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'jenolaszlo-sketch/minigraf-sharp'
+    if: github.repository == 'jenolaszlo-sketch/minigraf-sharp' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: nuget-production
     permissions:
@@ -36,35 +29,21 @@ jobs:
       - name: Resolve release identity
         id: selection
         uses: actions/github-script@v9
-        env:
-          REQUESTED_RUN_ID: ${{ inputs.ci_run_id }}
-          REQUESTED_SHA: ${{ inputs.release_sha }}
         with:
           script: |
             const { owner, repo } = context.repo;
-            let runId = (process.env.REQUESTED_RUN_ID || '').trim();
-            let sha = (process.env.REQUESTED_SHA || '').trim();
-            if (runId && (!/^[0-9]+$/.test(runId) || !Number.isSafeInteger(Number(runId)) || Number(runId) < 1))
-              throw new Error('ci_run_id must be a positive numeric run ID');
-            if (!runId) {
-              sha ||= context.sha;
-              if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('release_sha must be a full lowercase commit SHA');
-              const runs = await github.paginate('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
-                owner, repo, workflow_id: 'ci.yml', head_sha: sha,
-                branch: 'main', event: 'push', status: 'success', per_page: 100
-              });
-              const eligible = runs.filter(run => run.head_sha === sha && run.head_branch === 'main'
-                && run.event === 'push' && run.status === 'completed' && run.conclusion === 'success');
-              eligible.sort((left, right) => right.run_number - left.run_number || right.id - left.id);
-              if (!eligible.length)
-                throw new Error('No successful CI run for commit ' + sha + '. Wait for its full CI run; older commits are never selected automatically.');
-              runId = String(eligible[0].id);
-            }
-            const { data: run } = await github.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}', { owner, repo, run_id: Number(runId) });
-            sha ||= run.head_sha;
-            if (!/^[0-9a-f]{40}$/.test(sha) || run.head_sha !== sha)
-              throw new Error('CI run SHA differs from the requested release SHA');
-            core.setOutput('ci_run_id', runId);
+            const sha = context.sha;
+            if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('workflow SHA is not a full lowercase commit SHA');
+            const runs = await github.paginate('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+              owner, repo, workflow_id: 'ci.yml', head_sha: sha,
+              branch: 'main', event: 'push', status: 'success', per_page: 100
+            });
+            const eligible = runs.filter(run => run.head_sha === sha && run.head_branch === 'main'
+              && run.event === 'push' && run.status === 'completed' && run.conclusion === 'success');
+            eligible.sort((left, right) => right.run_number - left.run_number || right.id - left.id);
+            if (!eligible.length)
+              throw new Error('No successful CI run for commit ' + sha + '. Only a main commit with a green full CI run can release.');
+            core.setOutput('ci_run_id', String(eligible[0].id));
             core.setOutput('release_sha', sha);
       - name: Validate requested release run
         env:
@@ -127,8 +106,12 @@ jobs:
           $packages = @(Get-ChildItem artifacts/packages/MinigrafSharp.*.nupkg)
           if ($packages.Count -ne 1) { throw "Expected exactly one nupkg, got $($packages.Count)" }
           ./eng/Verify-Package.ps1 -PackagePath $packages[0].FullName
-          $hash = (Get-FileHash $packages[0].FullName -Algorithm SHA256).Hash
+          $pkg = $packages[0]
+          $version = $pkg.BaseName -replace '^MinigrafSharp\.',''
+          $hash = (Get-FileHash $pkg.FullName -Algorithm SHA256).Hash
+          "Package version: $version"
           "Package SHA-256: $hash"
+          "Package version: $version" >> $env:GITHUB_STEP_SUMMARY
           "Package SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Exchange GitHub OIDC identity for short-lived NuGet key

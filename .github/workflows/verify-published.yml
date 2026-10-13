@@ -1,27 +1,122 @@
 name: verify-published
 
-# Installs the exact published version from the public NuGet feed on
-# Windows/Linux/macOS × net8/net10 and runs the clean packaged consumer. Binds
-# to a validated successful ci.yml run so the published bytes can be compared
-# to the qualified artifact.
+# Runs automatically after a successful publish.yml (and can be dispatched
+# with no inputs). Derives the published release identity itself, revalidates
+# the matching successful ci.yml run, waits for the version to appear on
+# nuget.org, then installs the published package from the public feed across
+# Windows/Linux/macOS x net8/net10. If every consumer passes, it creates the
+# version tag at the release SHA and the GitHub pre-release, idempotently.
 on:
+  workflow_run:
+    workflows: [publish]
+    types: [completed]
   workflow_dispatch:
-    inputs:
-      ci_run_id:
-        description: Qualified full CI run containing the published artifact
-        required: true
-        type: string
-      release_sha:
-        description: Full commit SHA covered by the qualified CI run
-        required: true
-        type: string
 
 permissions:
   contents: read
   actions: read
 
 jobs:
+  resolve:
+    if: >-
+      github.repository == 'jenolaszlo-sketch/minigraf-sharp' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.selection.outputs.release_sha }}
+      ci_run_id: ${{ steps.selection.outputs.ci_run_id }}
+      version: ${{ steps.verify.outputs.version }}
+      package_sha256: ${{ steps.verify.outputs.package_sha256 }}
+    steps:
+      - name: Derive release identity
+        id: selection
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            let sha, branch;
+            if (context.eventName === 'workflow_run') {
+              const run = context.payload.workflow_run;
+              if (run.conclusion !== 'success') throw new Error('upstream publish workflow did not succeed');
+              sha = run.head_sha;
+              branch = run.head_branch;
+            } else {
+              sha = context.sha;
+              branch = 'main';
+            }
+            if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('release SHA is not a full lowercase commit SHA');
+            if (branch !== 'main') throw new Error('release must run from main');
+            const runs = await github.paginate('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs', {
+              owner, repo, workflow_id: 'ci.yml', head_sha: sha,
+              branch: 'main', event: 'push', status: 'success', per_page: 100
+            });
+            const eligible = runs.filter(r => r.head_sha === sha && r.head_branch === 'main'
+              && r.event === 'push' && r.status === 'completed' && r.conclusion === 'success');
+            eligible.sort((a, b) => b.run_number - a.run_number || b.id - a.id);
+            if (!eligible.length)
+              throw new Error('No successful ci.yml push run for ' + sha + '. Failing closed.');
+            core.setOutput('release_sha', sha);
+            core.setOutput('ci_run_id', String(eligible[0].id));
+
+      - name: Validate matching CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.selection.outputs.ci_run_id }}
+          RELEASE_SHA: ${{ steps.selection.outputs.release_sha }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "release_sha must be a full commit SHA"; exit 1; }
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "ci_run_id must be numeric"; exit 1; }
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")
+          workflow_id=$(jq -r .workflow_id <<<"$run")
+          workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id")
+          test "$(jq -r .path <<<"$workflow")" = ".github/workflows/ci.yml" || { echo "not the exact ci.yml workflow"; exit 1; }
+          test "$(jq -r .status <<<"$run")" = "completed" || { echo "CI run not completed"; exit 1; }
+          test "$(jq -r .conclusion <<<"$run")" = "success" || { echo "CI run did not succeed"; exit 1; }
+          test "$(jq -r .head_sha <<<"$run")" = "$RELEASE_SHA" || { echo "CI run SHA differs from release SHA"; exit 1; }
+          test "$(jq -r .event <<<"$run")" = "push" || { echo "release must be covered by a main push run"; exit 1; }
+          test "$(jq -r .head_branch <<<"$run")" = "main" || { echo "CI run must target main"; exit 1; }
+          jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name,.status,.conclusion] | @tsv')
+          job_count=$(printf '%s\n' "$jobs" | awk 'NF { n++ } END { print n+0 }')
+          test "$job_count" -eq 11 || { echo "expected 11 CI jobs, found $job_count"; exit 1; }
+          while IFS=$'\t' read -r name status conclusion; do
+            test "$status" = "completed" && test "$conclusion" = "success" || { echo "CI job failed: $name ($status/$conclusion)"; exit 1; }
+          done <<< "$jobs"
+          echo "Validated CI run $RUN_ID for $RELEASE_SHA (11 jobs)."
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts/packages
+          run-id: ${{ steps.selection.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify package and wait for public indexing
+        id: verify
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem artifacts/packages/MinigrafSharp.*.nupkg)
+          if ($packages.Count -ne 1) { throw "expected exactly one qualified package, got $($packages.Count)" }
+          ./eng/Verify-Package.ps1 -PackagePath $packages[0].FullName
+          $version = $packages[0].BaseName -replace '^MinigrafSharp\.',''
+          $hash = (Get-FileHash $packages[0].FullName -Algorithm SHA256).Hash
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "package_sha256=$hash" >> $env:GITHUB_OUTPUT
+          $url = "https://api.nuget.org/v3-flatcontainer/minigrafsharp/$($version.ToLowerInvariant())/minigrafsharp.$($version.ToLowerInvariant()).nupkg"
+          $ready = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            try {
+              $r = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -TimeoutSec 30
+              if ($r.StatusCode -eq 200) { $ready = $true; break }
+            } catch { }
+            Write-Host "waiting for nuget.org indexing of $version ($i)..."
+            Start-Sleep -Seconds 30
+          }
+          if (-not $ready) { throw "package version $version did not appear on nuget.org in time" }
+          Write-Host "nuget.org now serves $version (SHA-256 $hash)"
+
   consume:
+    needs: [resolve]
     strategy:
       fail-fast: false
       matrix:
@@ -34,16 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_sha }}
-      - name: Bind to successful CI artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.ci_run_id }}
-          RELEASE_SHA: ${{ inputs.release_sha }}
-        run: |
-          if ($env:RUN_ID -notmatch '^[0-9]+$' -or $env:RELEASE_SHA -notmatch '^[0-9a-f]{40}$') { throw "invalid release identity" }
-          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:RUN_ID" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or $run.head_sha -ne $env:RELEASE_SHA -or $run.conclusion -ne 'success' -or $run.path -ne '.github/workflows/ci.yml' -or $run.head_branch -ne 'main' -or $run.event -ne 'push') { throw "not a qualified CI run" }
+          ref: ${{ needs.resolve.outputs.release_sha }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
@@ -53,9 +139,51 @@ jobs:
         with:
           name: nupkg
           path: artifacts/packages
-          run-id: ${{ inputs.ci_run_id }}
+          run-id: ${{ needs.resolve.outputs.ci_run_id }}
           github-token: ${{ github.token }}
       - run: |
           $packages = @(Get-ChildItem artifacts/packages/MinigrafSharp.*.nupkg)
           if ($packages.Count -ne 1) { throw "expected one qualified package" }
           ./eng/Test-PackageConsumer.ps1 -Package $packages[0].FullName -TargetFramework ${{ matrix.tfm }} -UsePublicFeed
+
+  finalize:
+    needs: [resolve, consume]
+    if: ${{ needs.consume.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Create version tag and pre-release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SHA: ${{ needs.resolve.outputs.release_sha }}
+          PACKAGE_SHA: ${{ needs.resolve.outputs.package_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          [[ -n "$VERSION" && -n "$SHA" ]] || { echo "missing release identity"; exit 1; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid release SHA"; exit 1; }
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag")
+            type=$(jq -r .object.type <<<"$ref"); obj=$(jq -r .object.sha <<<"$ref")
+            if [ "$type" = "tag" ]; then commit=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$obj" --jq .object.sha); else commit="$obj"; fi
+            test "$commit" = "$SHA" || { echo "tag $tag exists but points at $commit, not $SHA"; exit 1; }
+            echo "tag $tag already present at $SHA"
+          else
+            tagobj=$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+              -f tag="$tag" -f message="MinigrafSharp $VERSION" -f object="$SHA" -f type=commit --jq .sha)
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$tagobj" >/dev/null
+            echo "created annotated tag $tag at $SHA"
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists"
+          else
+            notes=$(printf 'MinigrafSharp %s\n\nQualified on win-x64, linux-x64, and osx-arm64 for .NET 8 and .NET 10. NativeAOT qualified on all three RIDs with .NET 10. Uses Minigraf/minigraf-c v2.0.5. This is a preview release; see the compatibility and v2 qualification documentation for known upstream storage/recovery limitations.\n\nPackage SHA-256: %s\n' "$VERSION" "$PACKAGE_SHA")
+            gh release create "$tag" --title "MinigrafSharp $VERSION" --notes "$notes" --target "$SHA" --prerelease
+            echo "created pre-release $tag"
+          fi
