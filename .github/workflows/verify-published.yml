@@ -84,6 +84,10 @@ jobs:
           done <<< "$jobs"
           echo "Validated CI run $RUN_ID for $RELEASE_SHA (11 jobs)."
 
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.selection.outputs.release_sha }}
+
       - uses: actions/download-artifact@v4
         with:
           name: nupkg
