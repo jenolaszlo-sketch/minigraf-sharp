@@ -77,6 +77,25 @@ internal static class Program
 
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr mgs_tx_last_error_json(IntPtr tx);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr mgs_open_with_options(
+            [MarshalAs(UnmanagedType.LPStr)] string path,
+            [MarshalAs(UnmanagedType.LPStr)] string optionsJson,
+            out IntPtr errorJson);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr mgs_open_in_memory_with_options(
+            [MarshalAs(UnmanagedType.LPStr)] string optionsJson,
+            out IntPtr errorJson);
+
+        // Same export with a raw out-pointer so the NULL out-parameter path
+        // can be exercised exactly.
+        [DllImport(Dll, EntryPoint = "mgs_open_with_options", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr mgs_open_with_options_no_out(
+            [MarshalAs(UnmanagedType.LPStr)] string path,
+            [MarshalAs(UnmanagedType.LPStr)] string optionsJson,
+            IntPtr errorJsonOut);
     }
 
     internal static class Official
@@ -134,6 +153,10 @@ internal static class Program
             Case("write transaction failed commit diagnostics survive terminalization", TxFailedCommitDiagnostics);
             Case("write transaction thread affinity enforced in shim", TxThreadAffinity);
             Case("write transaction begin reentrancy is INT-001", TxBeginReentrancy);
+            Case("open options: valid schema opens with the requested behavior", OpenOptionsValid);
+            Case("open options: closed schema rejects unknown keys and wrong types", OpenOptionsInvalid);
+            Case("open options: structured open failure uses the out-parameter", OpenOptionsOpenFailure);
+            Case("open options: in-memory opens and NULL out-parameter are tolerated", OpenOptionsMemoryAndNullOut);
         }
         finally
         {
@@ -353,6 +376,74 @@ internal static class Program
         Check(rows is not null && CountResultRows(rows) == 2,
             "owner-staged facts committed: " + rows);
         Shim.mgs_close(db);
+    }
+
+    private static void OpenOptionsValid()
+    {
+        string path = Path.Combine(RootTemp, "opts-" + Guid.NewGuid().ToString("N") + ".graph");
+        IntPtr db = Shim.mgs_open_with_options(
+            path,
+            """{"wal_checkpoint_threshold":1,"max_results":1000000,"synchronous":"full"}""",
+            out IntPtr errorJson);
+        Check(db != IntPtr.Zero, "options open succeeded");
+        Check(errorJson == IntPtr.Zero, "success leaves the error out-parameter NULL");
+        Check(TakeOwnedString(Shim.mgs_execute(db, """(transact [[:a :v 1]])""")) is not null,
+            "write through options-open database");
+        Check(!File.Exists(path + ".wal"), "threshold=1 checkpointed on commit");
+        Shim.mgs_close(db);
+    }
+
+    private static void OpenOptionsInvalid()
+    {
+        string path = Path.Combine(RootTemp, "opts-bad-" + Guid.NewGuid().ToString("N") + ".graph");
+        IntPtr db = Shim.mgs_open_with_options(path, """{"unknown_option":1}""", out IntPtr unknownError);
+        Check(db == IntPtr.Zero, "unknown key refused");
+        var unknown = TakeErrorJson(unknownError);
+        Check(unknown is { Category: "Shim", Code: "MGS-003" },
+            "unknown key classified Shim/MGS-003: " + unknown);
+
+        db = Shim.mgs_open_with_options(path, """{"max_results":"many"}""", out IntPtr typeError);
+        Check(db == IntPtr.Zero, "wrong type refused");
+        var typed = TakeErrorJson(typeError);
+        Check(typed is { Category: "Shim", Code: "MGS-003" },
+            "wrong type classified Shim/MGS-003: " + typed);
+
+        db = Shim.mgs_open_with_options(path, """{"synchronous":"fast"}""", out IntPtr syncError);
+        Check(db == IntPtr.Zero, "bad sync mode refused");
+        var sync = TakeErrorJson(syncError);
+        Check(sync is { Category: "Shim", Code: "MGS-003" },
+            "bad sync mode classified Shim/MGS-003: " + sync);
+    }
+
+    private static void OpenOptionsOpenFailure()
+    {
+        string missing = Path.Combine(RootTemp, Guid.NewGuid().ToString("N"), "nested", "db.graph");
+        IntPtr db = Shim.mgs_open_with_options(
+            missing, "{}", out IntPtr errorJson);
+        Check(db == IntPtr.Zero, "open in a missing directory fails");
+        string? text = TakeOwnedString(errorJson);
+        Check(!string.IsNullOrEmpty(text), "structured failure JSON is present");
+        using var document = JsonDocument.Parse(text!);
+        JsonElement root = document.RootElement;
+        string? category = root.GetProperty("category").GetString();
+        string? code = root.GetProperty("code").GetString();
+        string? message = root.GetProperty("message").GetString();
+        Check(!string.IsNullOrEmpty(category) && !string.IsNullOrEmpty(code),
+            "category/code present: " + category + "/" + code);
+        Check(!string.IsNullOrEmpty(message), "diagnostic text preserved");
+    }
+
+    private static void OpenOptionsMemoryAndNullOut()
+    {
+        IntPtr db = Shim.mgs_open_in_memory_with_options("""{"wal_checkpoint_threshold":1}""", out IntPtr errorJson);
+        Check(db != IntPtr.Zero, "in-memory options open succeeded");
+        Check(errorJson == IntPtr.Zero, "in-memory success leaves out-parameter NULL");
+        Shim.mgs_close(db);
+
+        // NULL out-parameter must be tolerated (diagnostic channel absent).
+        IntPtr refused = Shim.mgs_open_with_options_no_out(
+            "definitely-not-a-real-directory/\u0001/x.graph", """{"unknown":1}""", IntPtr.Zero);
+        Check(refused == IntPtr.Zero, "invalid options still refused when the out-parameter is ignored");
     }
 
     private static int CountResultRows(string json)

@@ -191,4 +191,27 @@ internal static partial class ShimNativeMethods
         EntryPoint = "mgs_tx_last_error_json")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial nint MgsTxLastErrorJson(nint tx);
+    // C ABI: MgsDb *mgs_open_with_options(const char *path, const char *options_json, char **error_json_out);
+    // NULL on failure; when error_json_out is non-NULL it receives an owned
+    // structured-error JSON string (NULL on success), freed by the caller.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_open_with_options",
+        StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MgsOpenWithOptions(
+        string path,
+        string optionsJson,
+        out nint errorJson);
+
+    // C ABI: MgsDb *mgs_open_in_memory_with_options(const char *options_json, char **error_json_out);
+    // Same error contract.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_open_in_memory_with_options",
+        StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MgsOpenInMemoryWithOptions(
+        string optionsJson,
+        out nint errorJson);
 }

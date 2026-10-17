@@ -211,6 +211,223 @@ pub extern "C" fn mgs_open_in_memory() -> *mut MgsDb {
     }
 }
 
+// --- Open options (M3.2c; ADR 0003 amendment 3) ------------------------------
+
+fn wrap_db(db: Minigraf) -> *mut MgsDb {
+    Box::into_raw(Box::new(MgsDb {
+        engine: Arc::new(EngineCell {
+            db: Mutex::new(db),
+        }),
+        last_error: Mutex::new(None),
+        open_transactions: AtomicUsize::new(0),
+    }))
+}
+
+fn write_out_error(out: *mut *mut c_char, category: &str, code: &str, message: &str) {
+    if out.is_null() {
+        return;
+    }
+    let body = serde_json::json!({
+        "category": category,
+        "code": code,
+        "message": message,
+    })
+    .to_string();
+    let owned = CString::new(body)
+        .map(CString::into_raw)
+        .unwrap_or(std::ptr::null_mut());
+    unsafe { *out = owned };
+}
+
+fn write_out_core_error(out: *mut *mut c_char, e: &minigraf::MinigrafError) {
+    write_out_error(out, category_name(e.category()), e.code(), &format!("{e:#}"));
+}
+
+fn option_u64(value: &Json, key: &str) -> Result<u64, (String, String, String)> {
+    value.as_u64().ok_or_else(|| {
+        (
+            "Shim".to_string(),
+            "MGS-003".to_string(),
+            format!("open option '{key}' must be a non-negative integer"),
+        )
+    })
+}
+
+/// Closed options schema (ADR 0003): absent fields keep engine defaults;
+/// unknown keys and wrong types fail closed (never silently normalized).
+fn parse_open_options(text: &str) -> Result<minigraf::OpenOptions, (String, String, String)> {
+    let root: Json = serde_json::from_str(text).map_err(|e| {
+        (
+            "Shim".to_string(),
+            "MGS-003".to_string(),
+            format!("invalid options JSON: {e}"),
+        )
+    })?;
+    let obj = root.as_object().ok_or_else(|| {
+        (
+            "Shim".to_string(),
+            "MGS-003".to_string(),
+            "open options must be a JSON object".to_string(),
+        )
+    })?;
+
+    let mut opts = minigraf::OpenOptions::new();
+    for (key, value) in obj {
+        match key.as_str() {
+            "wal_checkpoint_threshold" => {
+                let n = option_u64(value, key)?;
+                let n = usize::try_from(n).map_err(|_| {
+                    (
+                        "Shim".to_string(),
+                        "MGS-003".to_string(),
+                        format!("open option '{key}' is out of range for this platform"),
+                    )
+                })?;
+                opts = opts.wal_checkpoint_threshold(n);
+            }
+            "max_derived_facts" => {
+                let n = option_u64(value, key)?;
+                let n = usize::try_from(n).map_err(|_| {
+                    (
+                        "Shim".to_string(),
+                        "MGS-003".to_string(),
+                        format!("open option '{key}' is out of range for this platform"),
+                    )
+                })?;
+                opts = opts.max_derived_facts(n);
+            }
+            "max_results" => {
+                let n = option_u64(value, key)?;
+                let n = usize::try_from(n).map_err(|_| {
+                    (
+                        "Shim".to_string(),
+                        "MGS-003".to_string(),
+                        format!("open option '{key}' is out of range for this platform"),
+                    )
+                })?;
+                opts = opts.max_results(n);
+            }
+            "synchronous" => {
+                let mode = match value.as_str() {
+                    Some("full") => minigraf::SyncMode::Full,
+                    Some("normal") => minigraf::SyncMode::Normal,
+                    _ => {
+                        return Err((
+                            "Shim".to_string(),
+                            "MGS-003".to_string(),
+                            "open option 'synchronous' must be \"full\" or \"normal\"".to_string(),
+                        ));
+                    }
+                };
+                opts = opts.synchronous(mode);
+            }
+            other => {
+                return Err((
+                    "Shim".to_string(),
+                    "MGS-003".to_string(),
+                    format!("unknown open option '{other}'"),
+                ));
+            }
+        }
+    }
+
+    Ok(opts)
+}
+
+fn options_text<'a>(options_json: *const c_char) -> Result<&'a str, (String, String, String)> {
+    if options_json.is_null() {
+        return Err((
+            "Shim".to_string(),
+            "MGS-003".to_string(),
+            "null open options pointer".to_string(),
+        ));
+    }
+    unsafe { CStr::from_ptr(options_json) }.to_str().map_err(|_| {
+        (
+            "Shim".to_string(),
+            "MGS-003".to_string(),
+            "invalid UTF-8 in open options JSON".to_string(),
+        )
+    })
+}
+
+/// Open a file-backed database with typed options. NULL on failure; when
+/// `error_json_out` is non-NULL it receives an owned structured-error JSON
+/// string on failure (and NULL on success), because no database handle exists
+/// to carry the diagnostic. The caller frees it with `mgs_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_open_with_options(
+    path: *const c_char,
+    options_json: *const c_char,
+    error_json_out: *mut *mut c_char,
+) -> *mut MgsDb {
+    if !error_json_out.is_null() {
+        unsafe { *error_json_out = std::ptr::null_mut() };
+    }
+    if path.is_null() {
+        write_out_error(
+            error_json_out,
+            "Shim",
+            "MGS-003",
+            "null database path pointer",
+        );
+        return std::ptr::null_mut();
+    }
+    let path = match unsafe { CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            write_out_error(
+                error_json_out,
+                "Shim",
+                "MGS-003",
+                "invalid UTF-8 in database path",
+            );
+            return std::ptr::null_mut();
+        }
+    };
+    let opts = match options_text(options_json).and_then(parse_open_options) {
+        Ok(o) => o,
+        Err((category, code, message)) => {
+            write_out_error(error_json_out, &category, &code, &message);
+            return std::ptr::null_mut();
+        }
+    };
+    match Minigraf::open_with_options(path, opts) {
+        Ok(db) => wrap_db(db),
+        Err(e) => {
+            write_out_core_error(error_json_out, &e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Open an in-memory database with typed options (WAL/page-cache options are
+/// documented no-ops in memory). Same error contract as
+/// `mgs_open_with_options`.
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_open_in_memory_with_options(
+    options_json: *const c_char,
+    error_json_out: *mut *mut c_char,
+) -> *mut MgsDb {
+    if !error_json_out.is_null() {
+        unsafe { *error_json_out = std::ptr::null_mut() };
+    }
+    let opts = match options_text(options_json).and_then(parse_open_options) {
+        Ok(o) => o,
+        Err((category, code, message)) => {
+            write_out_error(error_json_out, &category, &code, &message);
+            return std::ptr::null_mut();
+        }
+    };
+    match Minigraf::in_memory_with_options(opts) {
+        Ok(db) => wrap_db(db),
+        Err(e) => {
+            write_out_core_error(error_json_out, &e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
 /// Close a database and free all associated memory; exactly once per owned
 /// handle; NULL safe.
 ///

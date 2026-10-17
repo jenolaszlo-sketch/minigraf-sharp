@@ -76,6 +76,7 @@ try {
         Run "shim $tfm" @("run", "--project", "tests/MinigrafSharp.ShimTests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "prepared $tfm" @("run", "--project", "tests/MinigrafSharp.PreparedQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "transactions $tfm" @("run", "--project", "tests/MinigrafSharp.TransactionQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
+        Run "options $tfm" @("run", "--project", "tests/MinigrafSharp.OpenOptionsQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
     }
 }
 finally { Pop-Location }

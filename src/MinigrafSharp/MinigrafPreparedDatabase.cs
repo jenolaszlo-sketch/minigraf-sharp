@@ -55,6 +55,86 @@ public sealed class MinigrafPreparedDatabase : IDisposable
     }
 
     /// <summary>
+    /// Opens an in-memory database with typed options (M3.2c; ADR 0003).
+    /// WAL/page-cache-related options are documented engine no-ops in memory.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">An option value is invalid.</exception>
+    /// <exception cref="MinigrafNativeLoadException">The shim could not be
+    /// loaded or verified.</exception>
+    /// <exception cref="MinigrafOpenException">The native open failed; when the
+    /// engine reported structured information it is on
+    /// <see cref="MinigrafException.NativeCategory"/> and
+    /// <see cref="MinigrafException.NativeCode"/>.</exception>
+    public static MinigrafPreparedDatabase OpenMemory(MinigrafOpenOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        Native.ShimNativeLoader.EnsureLoadedAndVerified();
+        nint raw = Interop.ShimNativeMethods.MgsOpenInMemoryWithOptions(
+            options.ToJson(), out nint errorJson);
+        if (raw == nint.Zero)
+        {
+            throw OpenFailure(errorJson, "mgs_open_in_memory_with_options returned NULL.");
+        }
+
+        return new MinigrafPreparedDatabase(new Native.SafeMgsDatabaseHandle(raw));
+    }
+
+    /// <summary>
+    /// Opens a file-backed database with typed options (M3.2c; ADR 0003).
+    /// Default-open behavior is unchanged: <see cref="Open(string)"/> keeps
+    /// using the engine defaults.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> or
+    /// <paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">The path is empty or an option
+    /// value is invalid.</exception>
+    /// <exception cref="MinigrafNativeLoadException">The shim could not be
+    /// loaded or verified.</exception>
+    /// <exception cref="MinigrafOpenException">The native open failed; when the
+    /// engine reported structured information it is on
+    /// <see cref="MinigrafException.NativeCategory"/> and
+    /// <see cref="MinigrafException.NativeCode"/>.</exception>
+    public static MinigrafPreparedDatabase Open(string path, MinigrafOpenOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(options);
+        if (path.Length == 0)
+        {
+            throw new ArgumentException("Database path must not be empty.", nameof(path));
+        }
+
+        options.Validate();
+        Native.ShimNativeLoader.EnsureLoadedAndVerified();
+        nint raw = Interop.ShimNativeMethods.MgsOpenWithOptions(
+            path, options.ToJson(), out nint errorJson);
+        if (raw == nint.Zero)
+        {
+            throw OpenFailure(
+                errorJson,
+                $"mgs_open_with_options returned NULL for '{path}'. " +
+                "The shim exposes no database handle for failed opens.");
+        }
+
+        return new MinigrafPreparedDatabase(new Native.SafeMgsDatabaseHandle(raw));
+    }
+
+    private static MinigrafOpenException OpenFailure(nint errorJson, string fallback)
+    {
+        // Structured-error out-parameter (no database handle exists on open
+        // failure; ADR 0003 amendment 3). Consumes/frees the owned JSON.
+        Interop.NativeErrorInfo? info = Interop.NativeErrorJson.TryRead(errorJson);
+        var error = new MinigrafOpenException(info?.Message ?? fallback);
+        if (info is not null)
+        {
+            error.SetNativeError(info.Value.Category, info.Value.Code);
+        }
+
+        return error;
+    }
+
+    /// <summary>
     /// Opens a file-backed Minigraf database engine using the owned shim,
     /// creating the file when it does not exist. The path is passed as
     /// supplied (no normalization) using UTF-8.

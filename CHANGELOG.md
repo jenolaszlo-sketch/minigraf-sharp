@@ -39,6 +39,23 @@ ative/shim/tests/characterization.rs, run inside
 
 ### Added
 
+- M3.2c typed open options and structured open failures (ADR 0003
+  amendment 3): new `mgs_open_with_options` /
+  `mgs_open_in_memory_with_options` exports with an owned
+  `error_json_out` for open failures (no database handle exists on
+  failure), a closed JSON schema (threshold, derivation limits,
+  synchronous mode; unknown keys/types refused as `Shim/MGS-003`) and
+  live stale-error semantics (NULL on success). Managed surface:
+  `MinigrafOpenOptions` (immutable, `Default`, `Unlimited`),
+  `MinigrafSyncMode`, `MinigrafPreparedDatabase.Open(path, options)` /
+  `OpenMemory(options)`; existing parameterless overloads are untouched
+  and default-open behavior is verified unchanged. Open failures keep
+  the diagnostic text and carry `NativeCategory`/`NativeCode` when
+  reported. Qualification: shim harness 24/24, new
+  `tests/MinigrafSharp.OpenOptionsQualificationTests` 11/11 on
+  net8.0/net10.0, M3.2b transaction harness 18/18, full M3.1 matrix
+  green, public-surface closure now 23 types. Evidence in
+  `docs/evidence/m3.2/open-options.md`. No publication.
 - M3.2b explicit write transactions (ADR 0003, accepted with amendments):
   `MinigrafPreparedDatabase.BeginWrite()` and
   `MinigrafWriteTransaction` (`ExecuteRaw`/`Execute`/`Commit`/`Rollback`/

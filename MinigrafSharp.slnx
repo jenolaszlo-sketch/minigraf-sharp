@@ -9,6 +9,7 @@
     <Project Path="tests/MinigrafSharp.ShimTests/MinigrafSharp.ShimTests.csproj" />
     <Project Path="tests/MinigrafSharp.PreparedQualificationTests/MinigrafSharp.PreparedQualificationTests.csproj" />
     <Project Path="tests/MinigrafSharp.TransactionQualificationTests/MinigrafSharp.TransactionQualificationTests.csproj" />
+    <Project Path="tests/MinigrafSharp.OpenOptionsQualificationTests/MinigrafSharp.OpenOptionsQualificationTests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/MinigrafSharp.QuickStart/MinigrafSharp.QuickStart.csproj" />

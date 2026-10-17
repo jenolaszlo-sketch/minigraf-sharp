@@ -37,6 +37,23 @@ struct MgsDb *mgs_open(const char *path);
 struct MgsDb *mgs_open_in_memory(void);
 
 /**
+ * Open a file-backed database with typed options. NULL on failure; when
+ * `error_json_out` is non-NULL it receives an owned structured-error JSON
+ * string on failure (and NULL on success), because no database handle exists
+ * to carry the diagnostic. The caller frees it with `mgs_string_free`.
+ */
+struct MgsDb *mgs_open_with_options(const char *path,
+                                    const char *options_json,
+                                    char **error_json_out);
+
+/**
+ * Open an in-memory database with typed options (WAL/page-cache options are
+ * documented no-ops in memory). Same error contract as
+ * `mgs_open_with_options`.
+ */
+struct MgsDb *mgs_open_in_memory_with_options(const char *options_json, char **error_json_out);
+
+/**
  * Close a database and free all associated memory; exactly once per owned
  * handle; NULL safe.
  *
