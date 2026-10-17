@@ -105,6 +105,12 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $headerPath)) { throw "cbindgen failed" }
 }
 finally { Pop-Location }
+# Canonicalize newlines: cbindgen output follows the host's line endings on
+# some platforms; the pinned provenance identity is the LF blob, so the
+# generated header is normalized before hashing.
+$headerText = [System.IO.File]::ReadAllText($headerPath)
+$headerText = $headerText.Replace("`r`n", "`n").Replace("`r", "`n")
+[System.IO.File]::WriteAllText($headerPath, $headerText, [System.Text.UTF8Encoding]::new($false))
 $enc = [System.Text.UTF8Encoding]::new($false, $true)
 $null = $enc.GetString([System.IO.File]::ReadAllBytes($headerPath)) # UTF-8 validity gate
 if (([System.IO.File]::ReadAllBytes($headerPath) -contains 13) ) { throw "header must be LF-only" }

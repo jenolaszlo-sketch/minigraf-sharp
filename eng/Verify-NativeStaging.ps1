@@ -61,7 +61,8 @@ function Assert-Format([string]$path, [string]$rid) {
         # Universal ("fat") Mach-O stores its magic big-endian as CA FE BA BE.
         if ($bytes[0] -eq 0xCA -and $bytes[1] -eq 0xFE -and $bytes[2] -eq 0xBA -and $bytes[3] -eq 0xBE) { return }
         $magic = [BitConverter]::ToUInt32($bytes, 0)
-        if ($magic -ne 0xFEEDFACF) { Fail ("$rid : magic 0x{0:X8} is neither 64-bit Mach-O nor universal" -f $magic) }
+        # Cast the literal: PowerShell parses 0xFEEDFACF as a negative Int32.
+        if ($magic -ne [uint32]0xFEEDFACF) { Fail ("$rid : magic 0x{0:X8} is neither 64-bit Mach-O nor universal" -f $magic) }
         $cpuType = [BitConverter]::ToInt32($bytes, 4)
         if ($cpuType -ne 0x0100000C) { Fail ("$rid : Mach-O cputype 0x{0:X8} is not arm64 (0x0100000C)" -f $cpuType) }
     }

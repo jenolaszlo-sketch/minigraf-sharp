@@ -231,38 +231,44 @@ internal static class NativeLoader
             : new MinigrafNativeLoadException(message, inner);
     }
 
-    private static void RegisterResolverLocked()
+    internal static void RegisterResolverLocked()
     {
-        if (_resolverRegistered)
+        // May be called from the official path (already holding Sync) and
+        // from the shim path (holding only ShimNativeLoader.Sync); the lock
+        // is reentrant and its ordering is strictly shim -> official.
+        lock (Sync)
         {
-            return;
-        }
-
-        // One resolver per assembly routes strictly by library name: the
-        // official library to the official loader, the owned shim to
-        // ShimNativeLoader (which verifies identity before its handle is
-        // ever returned). Unknown names stay unresolved. Neither loader
-        // ever substitutes the other (ADR 0002 hard invariant 5).
-        NativeLibrary.SetDllImportResolver(
-            typeof(NativeLoader).Assembly,
-            static (libraryName, _, _) =>
+            if (_resolverRegistered)
             {
-                if (string.Equals(libraryName, LibraryName, StringComparison.OrdinalIgnoreCase))
-                {
-                    EnsureLoaded();
-                    return _handle;
-                }
+                return;
+            }
 
-                if (string.Equals(
-                        libraryName,
-                        ShimNativeLoader.LibraryName,
-                        StringComparison.OrdinalIgnoreCase))
+            // One resolver per assembly routes strictly by library name: the
+            // official library to the official loader, the owned shim to
+            // ShimNativeLoader (which verifies identity before its handle is
+            // ever returned). Unknown names stay unresolved. Neither loader
+            // ever substitutes the other (ADR 0002 hard invariant 5).
+            NativeLibrary.SetDllImportResolver(
+                typeof(NativeLoader).Assembly,
+                static (libraryName, _, _) =>
                 {
-                    return ShimNativeLoader.EnsureLoadedAndVerified();
-                }
+                    if (string.Equals(libraryName, LibraryName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        EnsureLoaded();
+                        return _handle;
+                    }
 
-                return nint.Zero;
-            });
-        _resolverRegistered = true;
+                    if (string.Equals(
+                            libraryName,
+                            ShimNativeLoader.LibraryName,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return ShimNativeLoader.EnsureLoadedAndVerified();
+                    }
+
+                    return nint.Zero;
+                });
+            _resolverRegistered = true;
+        }
     }
 }

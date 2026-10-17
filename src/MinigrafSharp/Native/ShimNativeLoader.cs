@@ -54,6 +54,14 @@ internal static class ShimNativeLoader
     {
         lock (Sync)
         {
+            // Ensure the assembly-level resolver routes the shim's P/Invoke
+            // name to this loader. On POSIX, dlopen of an already-loaded
+            // module by short name does not resolve to it, so a shim-only
+            // path (no official engine use first) must register the
+            // resolver itself. Registration is idempotent and routes
+            // strictly by library name.
+            NativeLoader.RegisterResolverLocked();
+
             if (_handle != nint.Zero)
             {
                 return _handle;
