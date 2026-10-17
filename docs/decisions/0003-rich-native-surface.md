@@ -1,0 +1,253 @@
+# ADR 0003 (draft / M3.2 checkpoint proposal) - Rich native surface
+
+Status: proposed 2026-10-17, not yet accepted. Basis: frozen M3.1 release
+(`0.1.0-preview.4`, qualified source `418e9fc`), measured characterization
+in `docs/evidence/m3.2/characterization.md` (pinned Minigraf 2.0.7), and
+the user-approved M3.2 mandate. No public managed type may be committed
+before this ADR is approved.
+
+## Scope
+
+Include, in independently qualified slices:
+
+1. explicit write transactions;
+2. typed database open options (subset of the pinned core's `OpenOptions`);
+3. structured native error information;
+4. typed Ref and Keyword result values;
+5. runtime native/core identity exposure;
+6. qualification and packaging of the above.
+
+Prepare/prepared-query behavior from M3.1 is frozen except where this ADR
+explicitly records an approved change (typed decode, see §5).
+
+## Native capability basis (measured)
+
+- Core transactions: `begin_write()` borrows the DB and holds the engine
+  write mutex; writes are staged; reads see staged + committed; commit
+  consumes and applies WAL-first with one `tx_count`; rollback consumes
+  and is infallible; drop = implicit rollback; same-thread reentrancy is
+  `INT-001`; another thread's writer blocks until the transaction ends;
+  rules register immediately (not transactional); prepared queries see
+  committed facts only inside an open transaction.
+- Commit failure: error returned, nothing applied, database usable; an
+  induced WAL failure surfaced as `INT-000` (coarse classification).
+- Open options: `wal_checkpoint_threshold` (default 1000; `usize::MAX`
+  disables implicit checkpoints), `page_cache_size` (no observable
+  behavior), `max_derived_facts` / `max_results` (default 1_000_000;
+  enforcement reports `INT-020`), `allow_unlocked` (not exercisable on
+  qualified hosts), `synchronous` (`Full`/`Normal`, durability difference
+  only under OS crash/power loss).
+- Errors: `MinigrafError` = category (Parser/Query/Storage/Wal/Api/
+  Internal) + documented stable text code (`PRS-`/`QRY-`/`STG-`/`WAL-`/
+  `API-`/`INT-`, returned by public `code()`) + message; Display is
+  `[CODE] message`.
+- Values: core `Value::Ref(Uuid)` and `Value::Keyword(String with ':')`
+  are distinct; the official C layer flattens both to JSON strings.
+- Identity: the core and minigraf-c expose no runtime version function;
+  the build-composed shim identity token is the only runtime identity.
+
+## ABI additions (owned `mgs_` surface; closed set)
+
+Existing M3.1 inventory (12 exports) stays unchanged. Additions:
+
+```c
+// Open options: options_json is a closed object; absent fields = defaults.
+MgsDb *mgs_open_with_options(const char *path, const char *options_json);
+MgsDb *mgs_open_in_memory_with_options(const char *options_json);
+
+// Explicit write transactions (db-owned; engine write lock held for the
+// transaction lifetime, exactly as the core does).
+MgsWriteTx *mgs_begin_write(MgsDb *db);
+char       *mgs_tx_execute(MgsWriteTx *tx, const char *datalog);
+int         mgs_tx_commit(MgsWriteTx *tx);    // 0 = committed, -1 = error
+void        mgs_tx_rollback(MgsWriteTx *tx);  // infallible, terminal
+void        mgs_write_tx_free(MgsWriteTx *tx); // rollback if open; NULL safe
+
+// Structured error info for the last failure on a handle, as owned JSON:
+// {"category":"...","code":"...","message":"..."}
+// NULL when no error. Freed with mgs_string_free. Category/code are copied
+// from the measured MinigrafError; message preserves the native text.
+char *mgs_last_error_json(MgsDb *db);
+char *mgs_tx_last_error_json(MgsWriteTx *tx);
+```
+
+ABI rules: every export has explicit ownership (owned JSON strings freed
+with `mgs_string_free`; borrowed identity string unchanged), explicit
+lifetime (transaction freed by commit/rollback/free exactly once), a
+deterministic error contract (NULL/-1 plus last-error JSON, never a
+silent default), documented nullability (all pointers non-null except
+returns), and documented threading (one transaction per database at a
+time, engine-serialized; no cross-thread transaction use).
+
+Not added: `page_cache_size`/`allow_unlocked` options (no qualified
+meaning on the qualified set / not exercisable), checkpoint on the shim
+surface, cursor/fact-log/v3 APIs, any raw Rust type.
+
+## Managed ownership and state machine
+
+Public additions (names reviewed here):
+
+- `MinigrafOpenOptions` (immutable): `Default`; `WalCheckpointThreshold`
+  (`ulong?`, null = engine default 1000; `Unlimited` constant maps to
+  `usize::MAX`), `MaxDerivedFacts`, `MaxResults` (`ulong?`), `Synchronous`
+  (`MinigrafSyncMode { Full, Normal }`). Validation happens before any
+  native call; unknown/out-of-range values throw `ArgumentException`.
+- `MinigrafWriteTransaction : IDisposable`:
+  `ExecuteRaw(string)`, `Execute(string)`, `Commit()`, `Rollback()`,
+  `Dispose()`.
+- `MinigrafNativeErrorCategory` enum: Parser, Query, Storage, Wal, Api,
+  Internal, Unknown.
+- `MinigrafException` (or derived) gains `NativeCategory`, `NativeCode`
+  (nullable), preserving the existing message text and hierarchy.
+- `MinigrafRuntimeIdentity` (read-only): `PackageVersion`,
+  `ShimAbiVersion`, `ShimSourceRevision`, `CoreVersion`, `CoreCommit`.
+- `MinigrafValueKind` gains `Ref`, `Keyword`; `MinigrafValue` gains
+  `GetRef()` (Guid) and `GetKeyword()` (string).
+- Where the surface lives: add `Open(string, MinigrafOpenOptions)`,
+  `OpenMemory(MinigrafOpenOptions)`, and `BeginWrite()` to
+  `MinigrafPreparedDatabase` (the owned-shim database). Renaming that
+  type is not possible without breaking M3.1; a separate duplicate
+  database type is rejected (bifurcation). The class documentation will
+  identify it as the owned native surface (prepared queries + rich
+  surface). Alternative (new `MinigrafNativeDatabase` name with
+  `MinigrafPreparedDatabase` retained as an alias) is an open question.
+
+Transaction state machine (`Open -> Committed | RolledBack | Disposed`):
+
+- `Commit()`: transitions to Committed on success. On failure, the native
+  transaction is already gone (measured commit consumption); the managed
+  object transitions to Disposed, releases the native handle, and throws
+  `MinigrafExecutionException` carrying the structured error. Terminal
+  states never return to Open.
+- `Rollback()`: infallible (measured); transitions to RolledBack.
+- `Dispose()` on an Open transaction performs rollback then free (measured
+  native drop = rollback); never commits implicitly. Double dispose is
+  harmless. Use after any terminal state throws
+  `ObjectDisposedException` deterministically.
+- The database owns live transactions: Dispose of the database rolls back
+  and frees all registered open transactions before releasing the native
+  db (`SafeHandle`), exactly the M3.1 cascade pattern; failed creation
+  leaks nothing.
+
+## Gate and threading contract
+
+The native engine holds the write mutex for the transaction's whole
+lifetime. Therefore the managed per-database gate is held from
+`BeginWrite()` until the transaction reaches a terminal state on the same
+thread (C# monitor reentrancy makes the transaction's own operations
+legal). Consequences, all documented and qualified:
+
+- other managed operations on that database from other threads wait until
+  the transaction ends — this mirrors the measured native behavior, it is
+  not hidden global serialization;
+- a transaction is thread-affine (owning thread id recorded; cross-thread
+  use throws `InvalidOperationException` deterministically). The engine's
+  same-thread reentrancy guard (`INT-001`) is the native basis;
+- separate databases remain fully independent (no shared gate).
+
+Alternative considered and rejected: per-call gate without holding it for
+the transaction lifetime — a concurrent `db.Execute` would block in the
+engine while holding the managed gate, deadlocking the transaction owner.
+
+## Error model
+
+- Preserve the native category and documented code verbatim; never map
+  unknown conditions onto a known category. Missing/absent structured
+  info maps to `MinigrafNativeErrorCategory.Unknown` with the diagnostic
+  text retained (commit I/O failure measured as `INT-000` shows why the
+  unknown path must exist).
+- Existing behavior is a superset: messages keep the native text; the
+  M3.1 cases (`INT-033`, `INT-035`, `PRS-018`, refusal text) remain
+  observable. No behavior may key off message text (M3.1 invariant 7
+  continues: classification comes from the structured fields, message is
+  diagnostics).
+- Codes are exposed as strings because the core documents them as stable
+  reference codes; no numeric constants are invented.
+
+## Typed Ref/Keyword values
+
+- The shim result serializer emits, for these two variants only, typed
+  JSON objects instead of flattened strings:
+  `{"type":"ref","value":"<uuid>"}` and
+  `{"type":"keyword","value":":<text>"}`. Other value shapes stay
+  byte-identical to the official binding.
+- The managed decoder adds `Ref`/`Keyword` kinds for these objects. The
+  official `MinigrafDatabase` path keeps its measured flattened-string
+  behavior (the official C layer loses the distinction); this asymmetry
+  is documented as a capability of the owned surface, not a regression.
+- Compatibility decision (explicit): results on the shim-backed surface
+  change for Ref/Keyword values from String to typed kinds. This is an
+  intentional, approved enrichment of the preview surface. It requires
+  rerunning the M3.1 native/shim/prepared harnesses and managed/package
+  qualification; the change is called out in the evidence and CHANGELOG.
+- Round trip: typed decode plus the existing typed bind path
+  (`MinigrafBindValue.ValRef`/`ValKeyword`) must be proven end to end.
+  The M3.1 bindings schema is extended only if the typed decode surfaces
+  a gap; any extension means ADR 0002 section update plus the full
+  prepared requalification.
+
+## Open options mapping (closed)
+
+| Managed | Native | Default | Qualification |
+| --- | --- | --- | --- |
+| `WalCheckpointThreshold` | `OpenOptions::wal_checkpoint_threshold` | 1000; `null` = default; `Unlimited` = `usize::MAX` | commit/close WAL presence |
+| `MaxDerivedFacts` | `OpenOptions::max_derived_facts` | 1_000_000 | INT-020 enforcement |
+| `MaxResults` | `OpenOptions::max_results` | 1_000_000 | INT-020 enforcement |
+| `Synchronous` | `SyncMode::{Full,Normal}` | Full | enable/disable accepted; durability difference not claimed (no OS-crash qualification this milestone) |
+
+`MinigrafDatabase.Open`/`OpenMemory` behavior is unchanged (defaults).
+Excluded with recorded reasons: `page_cache_size`, `allow_unlocked`.
+Invalid forms (negative/out-of-range, unknown enum, malformed JSON) fail
+before any database use.
+
+## Identity policy
+
+- Expose only stable concepts: managed package version, shim ABI version,
+  shim source revision, core version, core commit. Binary hashes remain
+  qualification/provenance data, not runtime API.
+- The existing shim identity verification is unchanged and remains the
+  loader gate; `MinigrafRuntimeIdentity` reads the same token (plus the
+  managed assembly version) after the verified load.
+- Negative control: a deliberately mismatched native combination must be
+  refused before use, must not cache a handle, and a subsequent valid
+  load must succeed (extending the M3.1 refusal evidence).
+
+## Compatibility and invariants
+
+- M3.1 invariants 1-7 remain in force for the extended surface: no
+  cross-library same-file concurrency, sequential handoff preserved,
+  cascade ownership, idempotent disposal, no cross-library fallback,
+  positive identity verification, no message-parsing for behavior.
+- Prepared query semantics stay frozen: prepared execution inside an open
+  transaction sees committed facts only (measured native behavior, now
+  documented as a contract); rules inside a transaction are not
+  transactional (measured) and are documented as such.
+- Unqualified RIDs stay unqualified; no new RIDs.
+- Package inventory gains no new files (binaries change; all per-RID
+  hashes and provenance regenerate through the pipeline; no hand-edited
+  artifact hashes).
+
+## Explicit exclusions
+
+Nested/ambient/distributed transactions; automatic retry; implicit
+transaction scopes; schema/ORM/LINQ/change-tracking/pooling; new query
+features; checkpoint on the shim; v3 APIs; performance work beyond the
+new surface; publication (separate dispatch).
+
+## Gates and open questions for approval
+
+1. Public managed types above and their placement on
+   `MinigrafPreparedDatabase` (vs. a new owned-surface type name).
+2. ABI additions exactly as listed (12 existing + 9 new exports = 21);
+   header regenerated and hashed.
+3. Transaction disposal = rollback (measured native basis) and
+   thread-affinity contract.
+4. Typed Ref/Keyword decode change on the shim surface (M3.1
+   requalification consequence).
+5. Options subset and the `Unlimited` sentinel representation.
+6. Error surface: `NativeCategory` + `NativeCode` on the existing
+   exception hierarchy, unknown path mandatory.
+
+Evidence: `docs/evidence/m3.2/` per slice (characterization, transactions,
+open-options, errors, values, identity, qualification, review), plus the
+existing `docs/verification.md` M3.1 regression record.

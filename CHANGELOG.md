@@ -17,6 +17,16 @@ release review and the exact trusted-publishing procedure (artifact from
 the validated CI run, never rebuilt). `linux-arm64`/`osx-x64` remain
 unqualified.
 
+- M3.2a native characterization: 16 measured probes against the pinned
+  Minigraf 2.0.7 core (
+ative/shim/tests/characterization.rs, run inside
+  every dist job via cargo test --locked) covering transaction
+  creation/commit/rollback/drop/reentrancy/blocking/failure state, open
+  options (wal_checkpoint_threshold, limits, in-memory no-ops), stable
+  error categories/codes, and typed Ref/Keyword identity. Evidence in
+  docs/evidence/m3.2/characterization.md; design proposal (not yet
+  accepted, no public types) in docs/decisions/0003-rich-native-surface.md.
+
 ### Fixed
 
 - Release pipeline: `publish.yml` and `verify-published.yml` now download
