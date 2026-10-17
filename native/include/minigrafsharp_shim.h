@@ -12,6 +12,14 @@ typedef struct MgsDb MgsDb;
 typedef struct MgsPreparedQuery MgsPreparedQuery;
 
 /**
+ * Opaque explicit write-transaction wrapper (M3.2b). The wrapper outlives
+ * the consuming Rust `WriteTransaction`: `commit`/`rollback` terminalize the
+ * inner transaction and leave the wrapper alive so failure diagnostics stay
+ * readable until `mgs_write_tx_free` (ADR 0003 amendment 1).
+ */
+typedef struct MgsWriteTx MgsWriteTx;
+
+/**
  * Static, NUL-terminated identity token; composed at build time by build.rs
  * from `identity.json` and `native/upstream.json`. Byte-exact fixed key order:
  * `{"shim_abi":…,"shim_source_revision":…,"core_version":…,"core_commit":…}`.
@@ -31,6 +39,11 @@ struct MgsDb *mgs_open_in_memory(void);
 /**
  * Close a database and free all associated memory; exactly once per owned
  * handle; NULL safe.
+ *
+ * Defensive contract: if a write transaction is still open on this handle,
+ * the engine is intentionally leaked instead of freed, so the transaction's
+ * borrowed engine state can never dangle (managed ownership cascades first;
+ * this only guards native misuse).
  */
 void mgs_close(struct MgsDb *handle);
 
@@ -84,3 +97,56 @@ char *mgs_prepared_execute(struct MgsPreparedQuery *prepared, const char *bindin
  * database handle remains valid and reusable afterward.
  */
 void mgs_prepared_query_free(struct MgsPreparedQuery *prepared);
+
+/**
+ * Structured last error on the database handle as owned JSON
+ * (`{"category","code","message"}`), or NULL when there is no error.
+ * Cleared by the next successful operation on the handle.
+ */
+char *mgs_last_error_json(const struct MgsDb *handle);
+
+/**
+ * Structured last error on a transaction wrapper (owned JSON) or NULL when
+ * there is no error. Remains readable after commit/rollback terminalized the
+ * inner transaction, until `mgs_write_tx_free` (ADR 0003 amendment 1).
+ */
+char *mgs_tx_last_error_json(const struct MgsWriteTx *tx);
+
+/**
+ * Begin an explicit write transaction. NULL on failure; the diagnostic is on
+ * the database handle (`mgs_last_error_json`). The engine write mutex is
+ * held for the transaction's lifetime, exactly as in the pinned core.
+ */
+struct MgsWriteTx *mgs_begin_write(struct MgsDb *handle);
+
+/**
+ * Execute a Datalog command inside the transaction. Owned JSON result (same
+ * shapes as `mgs_execute`; staged writes acknowledge with `{"ok":true}`) or
+ * NULL on error (diagnostic via `mgs_tx_last_error_json`). Thread-affine:
+ * a call from any other thread is refused with `Shim/MGS-001`.
+ */
+char *mgs_tx_execute(struct MgsWriteTx *tx, const char *datalog);
+
+/**
+ * Commit the transaction. Returns 0 on success, -1 on failure; the wrapper
+ * remains alive either way, and a failure is readable via
+ * `mgs_tx_last_error_json` until `mgs_write_tx_free` (amendment 1).
+ */
+int mgs_tx_commit(struct MgsWriteTx *tx);
+
+/**
+ * Roll back the transaction (infallible, terminal). A call after the
+ * transaction is terminal records `MGS-002`; a wrong-thread call records
+ * `MGS-001` and does not touch the native transaction.
+ */
+void mgs_tx_rollback(struct MgsWriteTx *tx);
+
+/**
+ * Free the transaction wrapper; NULL safe semantics return -1 for NULL.
+ *
+ * If the inner transaction is still open it is rolled back first, but only
+ * on the owner thread: a wrong-thread call returns -1 with `MGS-001` and
+ * leaves the wrapper alive (amendment 2: no cross-thread teardown).
+ * Terminalized wrappers may be freed from any thread.
+ */
+int mgs_write_tx_free(struct MgsWriteTx *tx);

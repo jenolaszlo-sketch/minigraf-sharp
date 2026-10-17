@@ -39,6 +39,25 @@ ative/shim/tests/characterization.rs, run inside
 
 ### Added
 
+- M3.2b explicit write transactions (ADR 0003, accepted with amendments):
+  `MinigrafPreparedDatabase.BeginWrite()` and
+  `MinigrafWriteTransaction` (`ExecuteRaw`/`Execute`/`Commit`/`Rollback`/
+  `Dispose`) over eight new `mgs_` exports (header repinned explicitly:
+  `D0D4B373...2952`). Ownership follows the M3.1 discipline: one live
+  transaction per thread (measured thread-local core guard) and per
+  database, database cascade with owner-thread rollback, exactly-once
+  native wrapper release via a retaining wrapper (failed-commit
+  diagnostics readable after terminalization), Dispose = rollback (never
+  commit), deterministic terminal and thread-affinity errors, no
+  finalizer teardown. Structured error properties added to
+  `MinigrafException` (`NativeCategory`/`NativeCode`) with a new
+  `MinigrafNativeErrorCategory` and owned `*_last_error_json` accessors;
+  native diagnostics preserved and unknown stays unknown. Qualification:
+  Rust probes 18/18, shim harness 20/20 (6 new transaction ABI cases),
+  new `tests/MinigrafSharp.TransactionQualificationTests` 18/18 on
+  net8.0/net10.0, full M3.1 regression green. Evidence in
+  `docs/evidence/m3.2/transactions.md`. No publication.
+
 - M0 repository scaffolding (`net8.0;net10.0`, warnings as errors).
 - Pinned upstream baseline: Minigraf core `v2.0.5`, minigraf-c `v2.0.5`.
 - Archived `native/include/minigraf.h` with SHA-256 provenance.

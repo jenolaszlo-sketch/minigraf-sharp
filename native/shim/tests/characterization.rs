@@ -479,3 +479,45 @@ fn ref_and_keyword_values_are_distinct_and_round_trip_through_storage() {
         "Ref equality is identity-based"
     );
 }
+#[test]
+fn second_database_transaction_same_thread_is_refused_by_thread_local_guard() {
+    let first = Minigraf::in_memory().unwrap();
+    let second = Minigraf::in_memory().unwrap();
+    let tx = first.begin_write().unwrap();
+    let err = match second.begin_write() {
+        Ok(_) => panic!("same-thread second-database transaction must be refused"),
+        Err(e) => e,
+    };
+    // The core's guard is thread-local, not per database: at most one
+    // explicit write transaction per thread, across all databases.
+    assert_eq!(err.code(), "INT-001", "measured code: {}", err.code());
+    // Implicit execute on the owning thread is likewise refused even against
+    // the other database.
+    let err = second
+        .execute(r#"(transact [[:b :v 2]])"#)
+        .expect_err("implicit execute on the owning thread must be refused");
+    assert_eq!(err.code(), "INT-001");
+    tx.rollback();
+    let mut other = second.begin_write().unwrap();
+    other.execute(r#"(transact [[:b :v 2]])"#).unwrap();
+    other.commit().unwrap();
+}
+
+#[test]
+fn second_database_transaction_on_another_thread_succeeds() {
+    let first = Minigraf::in_memory().unwrap();
+    let second = Minigraf::in_memory().unwrap();
+    let mut held = first.begin_write().unwrap();
+    held.execute(r#"(transact [[:a :v 1]])"#).unwrap();
+
+    std::thread::scope(|scope| {
+        let handle = scope.spawn(|| {
+            let mut other = second.begin_write().unwrap();
+            other.execute(r#"(transact [[:b :v 2]])"#).unwrap();
+            other.commit().unwrap();
+        });
+        handle.join().unwrap();
+    });
+
+    held.commit().unwrap();
+}

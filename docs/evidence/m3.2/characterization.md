@@ -231,3 +231,15 @@ win-x64 (2026-10-17T15:29:20Z), linux-x64 (15:25:56Z) and
 osx-arm64 (15:26:33Z). The M3.1 suites, packaging, tamper matrix and
 NativeAOT consumers stayed green, so M3.2a is regression-free and the
 characterization facts above are measured on all three qualified RIDs.
+## 14. Addendum during M3.2b: the write guard is thread-local
+
+Implementation probes exposed one contract the original probe set missed
+(now covered by two additional Rust probes, 18 total):
+`WRITE_TX_ACTIVE` is thread-local, not per database. Measured:
+`second_database_transaction_same_thread_is_refused_by_thread_local_guard`
+(second database `begin_write` on the owning thread → `INT-001`; implicit
+`execute` on that thread is refused even against the other database) and
+`second_database_transaction_on_another_thread_succeeds` (a different
+thread can hold a transaction on another database concurrently). The
+managed layer mirrors this thread-local contract; per-database engine
+serialization is unchanged.

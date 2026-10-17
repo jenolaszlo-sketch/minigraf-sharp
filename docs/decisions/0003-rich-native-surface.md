@@ -1,10 +1,37 @@
 # ADR 0003 (draft / M3.2 checkpoint proposal) - Rich native surface
 
-Status: proposed 2026-10-17, not yet accepted. Basis: frozen M3.1 release
-(`0.1.0-preview.4`, qualified source `418e9fc`), measured characterization
-in `docs/evidence/m3.2/characterization.md` (pinned Minigraf 2.0.7), and
-the user-approved M3.2 mandate. No public managed type may be committed
-before this ADR is approved.
+Status: **accepted 2026-10-17** with the three amendments below. Basis:
+frozen M3.1 release (`0.1.0-preview.4`, qualified source `418e9fc`),
+measured characterization in `docs/evidence/m3.2/characterization.md`
+(pinned Minigraf 2.0.7), and the user-approved M3.2 mandate.
+
+## Approval record (2026-10-17)
+
+Approved as drafted with the following required amendments, all folded
+into this document:
+
+1. **Wrapper lifetime**: the `MgsWriteTx` opaque wrapper's lifetime is
+   independent of the consuming Rust `WriteTransaction`. `commit` and
+   `rollback` terminalize (consume) the inner transaction; only
+   `mgs_write_tx_free` releases the wrapper, so post-commit/rollback
+   failure diagnostics remain retrievable from the wrapper.
+2. **Thread affinity** is enforced at both the shim and managed
+   boundaries, including cleanup/disposal paths. No arbitrary
+   finalizer-thread teardown of a thread-affine native transaction is
+   permitted (no managed finalizers; cross-thread terminalization fails
+   deterministically instead of touching the transaction).
+3. **Options-open failures** return structured errors through an owned
+   `error_json_out` parameter, because no database handle exists on open
+   failure. Stale-error clearing semantics are defined for every
+   structured-error path.
+
+Approved gates: rich surface stays on `MinigrafPreparedDatabase`;
+typed Ref/Keyword enrichment approved with full M3.1 requalification;
+closed options subset approved; `Synchronous` claim bounded (accept/reject
+only, no durability claim); general gate-6 error model approved.
+Progress past M3.2b requires no further approval unless the
+thread-affinity cleanup requirement forces a material ABI/ownership
+redesign.
 
 ## Scope
 
@@ -52,8 +79,14 @@ Existing M3.1 inventory (12 exports) stays unchanged. Additions:
 
 ```c
 // Open options: options_json is a closed object; absent fields = defaults.
-MgsDb *mgs_open_with_options(const char *path, const char *options_json);
-MgsDb *mgs_open_in_memory_with_options(const char *options_json);
+// On failure the function returns NULL and, when error_json_out is non-NULL,
+// stores an owned structured-error JSON string there (NULL on success).
+// The caller frees it with mgs_string_free. No db handle exists on failure,
+// so this out-parameter is the only channel (amendment 3).
+MgsDb *mgs_open_with_options(const char *path, const char *options_json,
+                             char **error_json_out);
+MgsDb *mgs_open_in_memory_with_options(const char *options_json,
+                                       char **error_json_out);
 
 // Explicit write transactions (db-owned; engine write lock held for the
 // transaction lifetime, exactly as the core does).
@@ -61,15 +94,42 @@ MgsWriteTx *mgs_begin_write(MgsDb *db);
 char       *mgs_tx_execute(MgsWriteTx *tx, const char *datalog);
 int         mgs_tx_commit(MgsWriteTx *tx);    // 0 = committed, -1 = error
 void        mgs_tx_rollback(MgsWriteTx *tx);  // infallible, terminal
-void        mgs_write_tx_free(MgsWriteTx *tx); // rollback if open; NULL safe
+int         mgs_write_tx_free(MgsWriteTx *tx); // 0 = freed; -1 = refused
+// mgs_write_tx_free: if the inner transaction is still open it is rolled
+// back and released first, but only on the owner thread. A wrong-thread
+// call while open returns -1 and leaves the wrapper alive (diagnostic via
+// mgs_tx_last_error_json) - never a silent cross-thread teardown
+// (amendment 2). Terminalized wrappers may be freed from any thread.
 
 // Structured error info for the last failure on a handle, as owned JSON:
 // {"category":"...","code":"...","message":"..."}
-// NULL when no error. Freed with mgs_string_free. Category/code are copied
-// from the measured MinigrafError; message preserves the native text.
+// NULL when there is no error. Freed with mgs_string_free.
 char *mgs_last_error_json(MgsDb *db);
 char *mgs_tx_last_error_json(MgsWriteTx *tx);
 ```
+
+### Structured-error semantics (all paths)
+
+- An operation's error state is written on failure and cleared on success:
+  after any successful operation on the handle (execute, prepare,
+  prepared execute, tx execute, commit), the corresponding
+  `*_last_error_json` returns NULL. Opening also clears/sets the
+  out-parameter: NULL is stored on success, an owned JSON string on
+  failure.
+- A failed operation replaces the stored error; terminal-state misuse is a
+  failure and replaces it.
+- `mgs_tx_last_error_json` remains valid and readable after the inner
+  transaction was consumed by commit or rollback, until the wrapper is
+  freed (amendment 1). This is how a failed commit's category/code/message
+  survive terminalization.
+- Shim-level failures (not produced by the core) use category `Shim` with
+  stable MinigrafSharp-owned codes: `MGS-001` thread-affinity violation,
+  `MGS-002` use of a terminal transaction, `MGS-003` invalid argument
+  (null handle/string). `message` always preserves the human diagnostic.
+- Native categories/codes are copied from the measured `MinigrafError`
+  (Parser/Query/Storage/Wal/Api/Internal and the documented code string);
+  unknown/unavailable structured data maps to category `Unknown` with the
+  diagnostic retained.
 
 ABI rules: every export has explicit ownership (owned JSON strings freed
 with `mgs_string_free`; borrowed identity string unchanged), explicit
@@ -129,25 +189,52 @@ Transaction state machine (`Open -> Committed | RolledBack | Disposed`):
   db (`SafeHandle`), exactly the M3.1 cascade pattern; failed creation
   leaks nothing.
 
-## Gate and threading contract
+## Gate and threading contract (revised for amendment 2)
 
 The native engine holds the write mutex for the transaction's whole
-lifetime. Therefore the managed per-database gate is held from
-`BeginWrite()` until the transaction reaches a terminal state on the same
-thread (C# monitor reentrancy makes the transaction's own operations
-legal). Consequences, all documented and qualified:
+lifetime, so writers on one database are serialized by the engine itself.
+The managed per-database gate is **not** held across the transaction
+lifetime. Instead:
 
-- other managed operations on that database from other threads wait until
-  the transaction ends — this mirrors the measured native behavior, it is
-  not hidden global serialization;
-- a transaction is thread-affine (owning thread id recorded; cross-thread
-  use throws `InvalidOperationException` deterministically). The engine's
-  same-thread reentrancy guard (`INT-001`) is the native basis;
-- separate databases remain fully independent (no shared gate).
+- `BeginWrite` takes the gate only to check that no transaction is open,
+  call `mgs_begin_write`, and register the child. The core's
+  write-transaction guard is **thread-local, not per database** (measured
+  during M3.2b): at most one explicit transaction per thread across all
+  databases, plus one per database (engine write mutex). Conflicting
+  attempts fail deterministically with `InvalidOperationException` rather
+  than blocking.
+- Transaction operations (`Execute`/`ExecuteRaw`/`Commit`/`Rollback`/
+  `Dispose`) never acquire the database gate before the native call. They
+  hold only the transaction's own lock. This is required for
+  deadlock-freedom: a concurrent `db.Execute` may hold the gate while
+  blocking on the engine write mutex, and the transaction owner must still
+  be able to commit and release that mutex.
+- Terminalization order is native-first: commit/rollback/free the native
+  transaction (releasing the engine lock), then take the gate to
+  unregister the child. `db.Dispose` then cannot wait on a transaction
+  whose owner is waiting on the gate.
+- Thread affinity is enforced at both boundaries (amendment 2). The shim
+  records the owner `ThreadId` at begin and refuses operations from other
+  threads (category `Shim`, code `MGS-001`); `mgs_write_tx_free` refuses
+  to tear down an open transaction from a non-owner thread (returns -1,
+  wrapper alive). The managed type records the owning managed thread id
+  and throws `InvalidOperationException` before any native call,
+  including `Dispose`. There are no finalizers anywhere on this path, so
+  no GC/finalizer thread can tear down a thread-affine transaction.
+- `db.Dispose` with a registered open transaction requires the disposing
+  thread to be the transaction's owner; otherwise it fails deterministically
+  (`InvalidOperationException`) before touching any native state. No
+  partial teardown, no cross-thread rollback.
+- Separate databases remain fully independent (no shared gate). Cross-
+  library same-file rules are unchanged (M3.1 invariants 1/2).
 
-Alternative considered and rejected: per-call gate without holding it for
-the transaction lifetime — a concurrent `db.Execute` would block in the
-engine while holding the managed gate, deadlocking the transaction owner.
+The managed transaction's public terminal semantics are the Rust ones:
+`Commit` consumes, `Rollback` consumes and is infallible,
+`Dispose` on an open transaction rolls back then frees (never commits).
+A terminalized wrapper is freed immediately by the managed layer after
+capturing any failure diagnostics; `MgsWriteTx` wrapper retention exists
+to make those diagnostics safe at the ABI boundary, not as a managed
+leak.
 
 ## Error model
 
@@ -234,19 +321,22 @@ transaction scopes; schema/ORM/LINQ/change-tracking/pooling; new query
 features; checkpoint on the shim; v3 APIs; performance work beyond the
 new surface; publication (separate dispatch).
 
-## Gates and open questions for approval
+## Gates (resolved 2026-10-17)
 
-1. Public managed types above and their placement on
-   `MinigrafPreparedDatabase` (vs. a new owned-surface type name).
-2. ABI additions exactly as listed (12 existing + 9 new exports = 21);
-   header regenerated and hashed.
-3. Transaction disposal = rollback (measured native basis) and
-   thread-affinity contract.
-4. Typed Ref/Keyword decode change on the shim surface (M3.1
-   requalification consequence).
-5. Options subset and the `Unlimited` sentinel representation.
+1. Public managed types above and placement on `MinigrafPreparedDatabase`
+   — approved.
+2. ABI additions as amended (12 existing + 9 new exports = 21), with the
+   wrapper lifetime, thread-affinity enforcement and `error_json_out`
+   amendments — approved; header regenerated and hashed per slice.
+3. Transaction disposal = rollback (measured native basis) and the
+   revised thread-affinity/gate contract — approved.
+4. Typed Ref/Keyword decode change on the shim surface with full M3.1
+   requalification — approved.
+5. Closed options subset and the `Unlimited` sentinel representation —
+   approved.
 6. Error surface: `NativeCategory` + `NativeCode` on the existing
-   exception hierarchy, unknown path mandatory.
+   exception hierarchy, `Shim`/`Unknown` categories, mandatory unknown
+   path and the stale-error clearing semantics — approved.
 
 Evidence: `docs/evidence/m3.2/` per slice (characterization, transactions,
 open-options, errors, values, identity, qualification, review), plus the

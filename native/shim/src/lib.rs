@@ -1,8 +1,9 @@
-//! MinigrafSharp-owned prepared-query C ABI shim over the pinned `minigraf`
-//! core crate (crates.io `minigraf = "=2.0.7"`, accumulator version and provenance in
-//! `native/upstream.json`).
+//! MinigrafSharp-owned C ABI shim over the pinned `minigraf` core crate
+//! (crates.io `minigraf = "=2.0.7"`, provenance in `native/upstream.json`):
+//! prepared queries (M3.1) and explicit write transactions (M3.2b).
 //!
-//! Contract: docs/m3-1a-shim-abi-proposal.md (approval basis: ADR 0002).
+//! Contracts: docs/m3-1a-shim-abi-proposal.md (ADR 0002) and
+//! docs/decisions/0003-rich-native-surface.md (ADR 0003).
 //! Identity: `mgs_shim_identity()`; token composed by build.rs from
 //! `identity.json` and `native/upstream.json`. No upstream file is copied.
 
@@ -11,9 +12,10 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use minigraf::{BindValue, Minigraf, PreparedQuery, QueryResult, Value};
+use minigraf::{BindValue, Minigraf, PreparedQuery, QueryResult, Value, WriteTransaction};
 use serde_json::Value as Json;
 
 // ─── Handles ──────────────────────────────────────────────────────────────────
@@ -26,46 +28,135 @@ struct EngineCell {
     db: Mutex<Minigraf>,
 }
 
+/// Structured error state for one handle. `text` backs the borrowed
+/// `mgs_last_error`/`mgs_prepared_last_error` accessors (legacy contract);
+/// `category`/`code`/`message` back the owned `*_last_error_json` accessors.
+/// An operation's error state is written on failure and cleared on success.
+struct ErrorState {
+    text: CString,
+    category: &'static str,
+    code: String,
+    message: String,
+}
+
+type ErrorCell = Mutex<Option<ErrorState>>;
+
 pub struct MgsDb {
     engine: Arc<EngineCell>,
-    last_error: Mutex<Option<CString>>,
+    last_error: ErrorCell,
+    /// Number of live `MgsWriteTx` wrappers whose inner Rust transaction is
+    /// still open. `mgs_close` refuses to free the engine (leaks it instead)
+    /// when this is non-zero, so no borrowed transaction can dangle.
+    open_transactions: AtomicUsize,
 }
 
 pub struct MgsPreparedQuery {
     prepared: PreparedQuery,
     query_text: String,
     engine: Arc<EngineCell>,
-    last_error: Mutex<Option<CString>>,
+    last_error: ErrorCell,
 }
 
-fn store_error(cell: &Mutex<Option<CString>>, msg: String) {
+/// Opaque explicit write-transaction wrapper (M3.2b). The wrapper outlives
+/// the consuming Rust `WriteTransaction`: `commit`/`rollback` terminalize the
+/// inner transaction and leave the wrapper alive so failure diagnostics stay
+/// readable until `mgs_write_tx_free` (ADR 0003 amendment 1).
+pub struct MgsWriteTx {
+    /// Thread that created the transaction; enforced for every operation
+    /// including cleanup (ADR 0003 amendment 2).
+    owner: std::thread::ThreadId,
+    /// Database used only to decrement `open_transactions` when the inner
+    /// transaction is terminalized. Never dereferenced once `inner` is None.
+    db: *mut MgsDb,
+    inner: Option<WriteTransaction<'static>>,
+    last_error: ErrorCell,
+}
+
+fn make_cstring(text: &str) -> CString {
+    CString::new(text).unwrap_or_else(|_| CString::new("error").unwrap_or_default())
+}
+
+fn set_error(cell: &ErrorCell, category: &'static str, code: String, text: String) {
     if let Ok(mut guard) = cell.lock() {
-        *guard =
-            Some(CString::new(msg).unwrap_or_else(|_| CString::new("error").unwrap_or_default()));
+        *guard = Some(ErrorState {
+            text: make_cstring(&text),
+            category,
+            code,
+            message: text,
+        });
     }
 }
 
-fn clear_error(cell: &Mutex<Option<CString>>) {
+fn category_name(category: minigraf::ErrorCategory) -> &'static str {
+    match category {
+        minigraf::ErrorCategory::Parser => "Parser",
+        minigraf::ErrorCategory::Query => "Query",
+        minigraf::ErrorCategory::Storage => "Storage",
+        minigraf::ErrorCategory::Wal => "Wal",
+        minigraf::ErrorCategory::Api => "Api",
+        minigraf::ErrorCategory::Internal => "Internal",
+        // `ErrorCategory` is `#[non_exhaustive]`; never guess for a future
+        // variant: unknown stays unknown (ADR 0003 error model).
+        _ => "Unknown",
+    }
+}
+
+/// Shim-owned failure codes (ADR 0003): MGS-001 thread-affinity violation,
+/// MGS-002 terminal-transaction misuse, MGS-003 invalid argument,
+/// MGS-004 internal shim failure (poisoned lock, non-representable text).
+fn store_shim_error(cell: &ErrorCell, code: &str, msg: &str) {
+    set_error(cell, "Shim", code.to_string(), msg.to_string());
+}
+
+fn store_core_error(cell: &ErrorCell, e: &minigraf::MinigrafError) {
+    set_error(
+        cell,
+        category_name(e.category()),
+        e.code().to_string(),
+        format!("{e:#}"),
+    );
+}
+
+fn clear_error(cell: &ErrorCell) {
     if let Ok(mut guard) = cell.lock() {
         *guard = None;
     }
 }
 
-fn error_text(cell: &Mutex<Option<CString>>) -> *const c_char {
+fn error_text(cell: &ErrorCell) -> *const c_char {
     match cell.lock() {
         Ok(guard) => match guard.as_ref() {
-            Some(s) => s.as_ptr(),
+            Some(s) => s.text.as_ptr(),
             None => std::ptr::null(),
         },
         Err(_) => std::ptr::null(),
     }
 }
 
-fn to_owned_json_or_error(json: String, err: &Mutex<Option<CString>>) -> *mut c_char {
+fn error_json(cell: &ErrorCell) -> *mut c_char {
+    let body = match cell.lock() {
+        Ok(guard) => match guard.as_ref() {
+            Some(state) => serde_json::json!({
+                "category": state.category,
+                "code": state.code,
+                "message": state.message,
+            })
+            .to_string(),
+            None => return std::ptr::null_mut(),
+        },
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match CString::new(body) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+fn to_owned_json_or_error(json: String, err: &ErrorCell) -> *mut c_char {
     match CString::new(json) {
         Ok(s) => s.into_raw(),
         Err(_) => {
-            store_error(err, "result JSON contained a null byte".into());
+            store_shim_error(err, "MGS-004", "result JSON contained a null byte");
             std::ptr::null_mut()
         }
     }
@@ -99,6 +190,7 @@ pub extern "C" fn mgs_open(path: *const c_char) -> *mut MgsDb {
                 db: Mutex::new(db),
             }),
             last_error: Mutex::new(None),
+            open_transactions: AtomicUsize::new(0),
         })),
         Err(_) => std::ptr::null_mut(),
     }
@@ -113,6 +205,7 @@ pub extern "C" fn mgs_open_in_memory() -> *mut MgsDb {
                 db: Mutex::new(db),
             }),
             last_error: Mutex::new(None),
+            open_transactions: AtomicUsize::new(0),
         })),
         Err(_) => std::ptr::null_mut(),
     }
@@ -120,9 +213,18 @@ pub extern "C" fn mgs_open_in_memory() -> *mut MgsDb {
 
 /// Close a database and free all associated memory; exactly once per owned
 /// handle; NULL safe.
+///
+/// Defensive contract: if a write transaction is still open on this handle,
+/// the engine is intentionally leaked instead of freed, so the transaction's
+/// borrowed engine state can never dangle (managed ownership cascades first;
+/// this only guards native misuse).
 #[unsafe(no_mangle)]
 pub extern "C" fn mgs_close(handle: *mut MgsDb) {
     if !handle.is_null() {
+        let open = unsafe { &*handle }.open_transactions.load(Ordering::SeqCst);
+        if open > 0 {
+            return;
+        }
         unsafe { drop(Box::from_raw(handle)) };
     }
 }
@@ -173,14 +275,14 @@ pub extern "C" fn mgs_execute(handle: *mut MgsDb, datalog: *const c_char) -> *mu
     let datalog = match unsafe { CStr::from_ptr(datalog) }.to_str() {
         Ok(s) => s,
         Err(_) => {
-            store_error(&handle.last_error, "invalid UTF-8 in datalog string".into());
+            store_shim_error(&handle.last_error, "MGS-003", "invalid UTF-8 in datalog string");
             return std::ptr::null_mut();
         }
     };
     let db_guard = match handle.engine.db.lock() {
         Ok(g) => g,
         Err(_) => {
-            store_error(&handle.last_error, "database lock poisoned".into());
+            store_shim_error(&handle.last_error, "MGS-004", "database lock poisoned");
             return std::ptr::null_mut();
         }
     };
@@ -192,7 +294,7 @@ pub extern "C" fn mgs_execute(handle: *mut MgsDb, datalog: *const c_char) -> *mu
             to_owned_json_or_error(query_result_to_json(qr), &handle.last_error)
         }
         Err(e) => {
-            store_error(&handle.last_error, format!("{e:#}"));
+            store_core_error(&handle.last_error, &e);
             std::ptr::null_mut()
         }
     }
@@ -215,14 +317,14 @@ pub extern "C" fn mgs_prepare(
     let datalog = match unsafe { CStr::from_ptr(datalog) }.to_str() {
         Ok(s) => s,
         Err(_) => {
-            store_error(&handle.last_error, "invalid UTF-8 in datalog string".into());
+            store_shim_error(&handle.last_error, "MGS-003", "invalid UTF-8 in datalog string");
             return std::ptr::null_mut();
         }
     };
     let db_guard = match handle.engine.db.lock() {
         Ok(g) => g,
         Err(_) => {
-            store_error(&handle.last_error, "database lock poisoned".into());
+            store_shim_error(&handle.last_error, "MGS-004", "database lock poisoned");
             return std::ptr::null_mut();
         }
     };
@@ -239,7 +341,7 @@ pub extern "C" fn mgs_prepare(
             }))
         }
         Err(e) => {
-            store_error(&handle.last_error, format!("{e:#}"));
+            store_core_error(&handle.last_error, &e);
             std::ptr::null_mut()
         }
     }
@@ -261,16 +363,17 @@ pub extern "C" fn mgs_prepared_slot_names(prepared: *const MgsPreparedQuery) -> 
             match CString::new(json) {
                 Ok(s) => s.into_raw(),
                 Err(_) => {
-                    store_error(
+                    store_shim_error(
                         &prepared.last_error,
-                        "slot-names JSON contained a null byte".into(),
+                        "MGS-004",
+                        "slot-names JSON contained a null byte",
                     );
                     std::ptr::null_mut()
                 }
             }
         }
         Err(msg) => {
-            store_error(&prepared.last_error, msg);
+            store_shim_error(&prepared.last_error, "MGS-004", &msg);
             std::ptr::null_mut()
         }
     }
@@ -290,14 +393,18 @@ pub extern "C" fn mgs_prepared_execute(
     let bindings_json = match unsafe { CStr::from_ptr(bindings_json) }.to_str() {
         Ok(s) => s,
         Err(_) => {
-            store_error(&prepared.last_error, "invalid UTF-8 in bindings JSON".into());
+            store_shim_error(&prepared.last_error, "MGS-003", "invalid UTF-8 in bindings JSON");
             return std::ptr::null_mut();
         }
     };
     let owned: Vec<(String, BindValue)> = match parse_bindings(bindings_json) {
         Ok(b) => b,
         Err(msg) => {
-            store_error(&prepared.last_error, format!("invalid bindings JSON: {msg}"));
+            store_shim_error(
+                &prepared.last_error,
+                "MGS-003",
+                &format!("invalid bindings JSON: {msg}"),
+            );
             return std::ptr::null_mut();
         }
     };
@@ -306,7 +413,7 @@ pub extern "C" fn mgs_prepared_execute(
     let _engine_guard = match prepared.engine.db.lock() {
         Ok(g) => Some(g),
         Err(_) => {
-            store_error(&prepared.last_error, "database lock poisoned".into());
+            store_shim_error(&prepared.last_error, "MGS-004", "database lock poisoned");
             return std::ptr::null_mut();
         }
     };
@@ -316,7 +423,7 @@ pub extern "C" fn mgs_prepared_execute(
             to_owned_json_or_error(query_result_to_json(qr), &prepared.last_error)
         }
         Err(e) => {
-            store_error(&prepared.last_error, format!("{e:#}"));
+            store_core_error(&prepared.last_error, &e);
             std::ptr::null_mut()
         }
     }
@@ -329,6 +436,232 @@ pub extern "C" fn mgs_prepared_query_free(prepared: *mut MgsPreparedQuery) {
     if !prepared.is_null() {
         unsafe { drop(Box::from_raw(prepared)) };
     }
+}
+
+/// Structured last error on the database handle as owned JSON
+/// (`{"category","code","message"}`), or NULL when there is no error.
+/// Cleared by the next successful operation on the handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_last_error_json(handle: *const MgsDb) -> *mut c_char {
+    if handle.is_null() {
+        return std::ptr::null_mut();
+    }
+    error_json(&unsafe { &*handle }.last_error)
+}
+
+/// Structured last error on a transaction wrapper (owned JSON) or NULL when
+/// there is no error. Remains readable after commit/rollback terminalized the
+/// inner transaction, until `mgs_write_tx_free` (ADR 0003 amendment 1).
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_tx_last_error_json(tx: *const MgsWriteTx) -> *mut c_char {
+    if tx.is_null() {
+        return std::ptr::null_mut();
+    }
+    error_json(&unsafe { &*tx }.last_error)
+}
+
+// --- Explicit write transactions (M3.2b; ADR 0003) ---------------------------
+
+fn tx_owner_ok(tx: &MgsWriteTx) -> bool {
+    tx.owner == std::thread::current().id()
+}
+
+/// Decrement the database's open-transaction count exactly once, when the
+/// borrowed Rust transaction is consumed (commit/rollback/free-while-open).
+/// Only called while the database is guaranteed alive by that same count.
+fn tx_release_open_count(tx: &MgsWriteTx) {
+    if !tx.db.is_null() {
+        let db = unsafe { &*tx.db };
+        db.open_transactions.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Begin an explicit write transaction. NULL on failure; the diagnostic is on
+/// the database handle (`mgs_last_error_json`). The engine write mutex is
+/// held for the transaction's lifetime, exactly as in the pinned core.
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_begin_write(handle: *mut MgsDb) -> *mut MgsWriteTx {
+    if handle.is_null() {
+        return std::ptr::null_mut();
+    }
+    let handle_ref = unsafe { &*handle };
+    let guard = match handle_ref.engine.db.lock() {
+        Ok(g) => g,
+        Err(_) => {
+            store_shim_error(&handle_ref.last_error, "MGS-004", "database lock poisoned");
+            return std::ptr::null_mut();
+        }
+    };
+    let tx = match guard.begin_write() {
+        Ok(t) => t,
+        Err(e) => {
+            store_core_error(&handle_ref.last_error, &e);
+            return std::ptr::null_mut();
+        }
+    };
+    // The wrapper outlives the borrow; soundness is guaranteed by ownership:
+    // the managed layer cascade-closes transactions before the database, and
+    // `mgs_close` leaks rather than freeing while `open_transactions > 0`.
+    let tx_static: WriteTransaction<'static> = unsafe { std::mem::transmute(tx) };
+    drop(guard);
+    handle_ref.open_transactions.fetch_add(1, Ordering::SeqCst);
+    clear_error(&handle_ref.last_error);
+    Box::into_raw(Box::new(MgsWriteTx {
+        owner: std::thread::current().id(),
+        db: handle,
+        inner: Some(tx_static),
+        last_error: Mutex::new(None),
+    }))
+}
+
+/// Execute a Datalog command inside the transaction. Owned JSON result (same
+/// shapes as `mgs_execute`; staged writes acknowledge with `{"ok":true}`) or
+/// NULL on error (diagnostic via `mgs_tx_last_error_json`). Thread-affine:
+/// a call from any other thread is refused with `Shim/MGS-001`.
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_tx_execute(tx: *mut MgsWriteTx, datalog: *const c_char) -> *mut c_char {
+    if tx.is_null() {
+        return std::ptr::null_mut();
+    }
+    let tx = unsafe { &mut *tx };
+    if datalog.is_null() {
+        store_shim_error(&tx.last_error, "MGS-003", "null datalog pointer");
+        return std::ptr::null_mut();
+    }
+    if !tx_owner_ok(tx) {
+        store_shim_error(
+            &tx.last_error,
+            "MGS-001",
+            "write transactions are thread-affine; execute from the thread that began the transaction",
+        );
+        return std::ptr::null_mut();
+    }
+    let datalog = match unsafe { CStr::from_ptr(datalog) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            store_shim_error(&tx.last_error, "MGS-003", "invalid UTF-8 in datalog string");
+            return std::ptr::null_mut();
+        }
+    };
+    let Some(inner) = tx.inner.as_mut() else {
+        store_shim_error(
+            &tx.last_error,
+            "MGS-002",
+            "write transaction is already terminal (committed or rolled back)",
+        );
+        return std::ptr::null_mut();
+    };
+    match inner.execute(datalog) {
+        Ok(qr) => {
+            clear_error(&tx.last_error);
+            to_owned_json_or_error(query_result_to_json(qr), &tx.last_error)
+        }
+        Err(e) => {
+            store_core_error(&tx.last_error, &e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Commit the transaction. Returns 0 on success, -1 on failure; the wrapper
+/// remains alive either way, and a failure is readable via
+/// `mgs_tx_last_error_json` until `mgs_write_tx_free` (amendment 1).
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_tx_commit(tx: *mut MgsWriteTx) -> std::os::raw::c_int {
+    if tx.is_null() {
+        return -1;
+    }
+    let tx = unsafe { &mut *tx };
+    if !tx_owner_ok(tx) {
+        store_shim_error(
+            &tx.last_error,
+            "MGS-001",
+            "write transactions are thread-affine; commit from the thread that began the transaction",
+        );
+        return -1;
+    }
+    let Some(inner) = tx.inner.take() else {
+        store_shim_error(
+            &tx.last_error,
+            "MGS-002",
+            "write transaction is already terminal (committed or rolled back)",
+        );
+        return -1;
+    };
+    match inner.commit() {
+        Ok(()) => {
+            tx_release_open_count(tx);
+            clear_error(&tx.last_error);
+            0
+        }
+        Err(e) => {
+            // The core consumes the transaction on failure; nothing is
+            // applied and the database remains usable. Keep the diagnostic on
+            // the wrapper.
+            tx_release_open_count(tx);
+            store_core_error(&tx.last_error, &e);
+            -1
+        }
+    }
+}
+
+/// Roll back the transaction (infallible, terminal). A call after the
+/// transaction is terminal records `MGS-002`; a wrong-thread call records
+/// `MGS-001` and does not touch the native transaction.
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_tx_rollback(tx: *mut MgsWriteTx) {
+    if tx.is_null() {
+        return;
+    }
+    let tx = unsafe { &mut *tx };
+    if !tx_owner_ok(tx) {
+        store_shim_error(
+            &tx.last_error,
+            "MGS-001",
+            "write transactions are thread-affine; roll back from the thread that began the transaction",
+        );
+        return;
+    }
+    let Some(inner) = tx.inner.take() else {
+        store_shim_error(
+            &tx.last_error,
+            "MGS-002",
+            "write transaction is already terminal (committed or rolled back)",
+        );
+        return;
+    };
+    inner.rollback();
+    tx_release_open_count(tx);
+    clear_error(&tx.last_error);
+}
+
+/// Free the transaction wrapper; NULL safe semantics return -1 for NULL.
+///
+/// If the inner transaction is still open it is rolled back first, but only
+/// on the owner thread: a wrong-thread call returns -1 with `MGS-001` and
+/// leaves the wrapper alive (amendment 2: no cross-thread teardown).
+/// Terminalized wrappers may be freed from any thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_write_tx_free(tx: *mut MgsWriteTx) -> std::os::raw::c_int {
+    if tx.is_null() {
+        return -1;
+    }
+    let tx = unsafe { &mut *tx };
+    if let Some(inner) = tx.inner.take() {
+        if !tx_owner_ok(tx) {
+            tx.inner = Some(inner);
+            store_shim_error(
+                &tx.last_error,
+                "MGS-001",
+                "write transactions are thread-affine; free from the thread that began the transaction",
+            );
+            return -1;
+        }
+        inner.rollback();
+        tx_release_open_count(tx);
+    }
+    unsafe { drop(Box::from_raw(tx)) };
+    0
 }
 
 // ─── Result JSON (byte-parity with the official minigraf-c shapes) ────────────

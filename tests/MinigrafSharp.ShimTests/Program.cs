@@ -55,6 +55,28 @@ internal static class Program
 
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void mgs_prepared_query_free(IntPtr pq);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr mgs_begin_write(IntPtr db);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr mgs_tx_execute(
+            IntPtr tx, [MarshalAs(UnmanagedType.LPStr)] string datalog);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int mgs_tx_commit(IntPtr tx);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void mgs_tx_rollback(IntPtr tx);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int mgs_write_tx_free(IntPtr tx);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr mgs_last_error_json(IntPtr db);
+
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr mgs_tx_last_error_json(IntPtr tx);
     }
 
     internal static class Official
@@ -106,6 +128,12 @@ internal static class Program
             Case("disposal", Disposal);
             Case("cross-library file handoff (official -> shim -> official)", CrossLibraryHandoff);
             Case("cross-library concurrent same-file open rejected", CrossLibraryConcurrent);
+            Case("write transaction native lifecycle", TxLifecycle);
+            Case("write transaction terminal misuse is MGS-002", TxTerminalMisuse);
+            Case("write transaction stale error clearing", TxStaleErrorClearing);
+            Case("write transaction failed commit diagnostics survive terminalization", TxFailedCommitDiagnostics);
+            Case("write transaction thread affinity enforced in shim", TxThreadAffinity);
+            Case("write transaction begin reentrancy is INT-001", TxBeginReentrancy);
         }
         finally
         {
@@ -153,6 +181,198 @@ internal static class Program
             return loaded;
         }
         return IntPtr.Zero;
+    }
+
+    private static string? TakeOwnedString(IntPtr p)
+    {
+        if (p == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        string? text = Marshal.PtrToStringUTF8(p);
+        Shim.mgs_string_free(p);
+        return text;
+    }
+
+    private static (string Category, string Code)? TakeErrorJson(IntPtr p)
+    {
+        string? text = TakeOwnedString(p);
+        if (text is null)
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(text);
+        JsonElement root = document.RootElement;
+        return (root.GetProperty("category").GetString() ?? string.Empty,
+            root.GetProperty("code").GetString() ?? string.Empty);
+    }
+
+    private static void TxLifecycle()
+    {
+        IntPtr db = Shim.mgs_open_in_memory();
+        Check(db != IntPtr.Zero, "in-memory open");
+        IntPtr tx = Shim.mgs_begin_write(db);
+        Check(tx != IntPtr.Zero, "begin write");
+
+        string? ack = TakeOwnedString(Shim.mgs_tx_execute(tx, """(transact [[:a :v 1]])"""));
+        Check(ack is not null && ack.Contains("\"ok\":true", StringComparison.Ordinal),
+            "staged write acknowledges ok: " + ack);
+        string? read = TakeOwnedString(Shim.mgs_tx_execute(tx, "(query [:find ?v :where [:a :v ?v]])"));
+        Check(read is not null && read.Contains("\"results\"", StringComparison.Ordinal),
+            "transactional read result shape: " + read);
+
+        Check(Shim.mgs_tx_commit(tx) == 0, "commit returns 0");
+        Check(Shim.mgs_tx_last_error_json(tx) == IntPtr.Zero,
+            "successful commit leaves no structured error on the wrapper");
+        Check(Shim.mgs_write_tx_free(tx) == 0, "free terminalized wrapper");
+
+        string? after = TakeOwnedString(Shim.mgs_execute(db, "(query [:find ?v :where [:a :v ?v]])"));
+        Check(after is not null && after.Contains("1", StringComparison.Ordinal),
+            "committed fact visible after free: " + after);
+        Shim.mgs_close(db);
+        Check(Shim.mgs_write_tx_free(IntPtr.Zero) == -1, "free(NULL) is refused");
+    }
+
+    private static void TxTerminalMisuse()
+    {
+        IntPtr db = Shim.mgs_open_in_memory();
+        IntPtr tx = Shim.mgs_begin_write(db);
+        Check(tx != IntPtr.Zero, "begin write");
+        Check(Shim.mgs_tx_commit(tx) == 0, "commit");
+
+        Check(Shim.mgs_tx_execute(tx, """(transact [[:b :v 2]])""") == IntPtr.Zero,
+            "execute after commit returns NULL");
+        var executeError = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+        Check(executeError is { Category: "Shim", Code: "MGS-002" },
+            "terminal misuse classified Shim/MGS-002: " + executeError);
+        Check(Shim.mgs_tx_commit(tx) == -1, "second commit refused");
+        var commitError = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+        Check(commitError is { Category: "Shim", Code: "MGS-002" },
+            "second commit classified Shim/MGS-002: " + commitError);
+        Shim.mgs_tx_rollback(tx);
+        var rollbackError = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+        Check(rollbackError is { Category: "Shim", Code: "MGS-002" },
+            "rollback after terminal classified Shim/MGS-002: " + rollbackError);
+        Check(Shim.mgs_write_tx_free(tx) == 0, "free");
+        Shim.mgs_close(db);
+    }
+
+    private static void TxStaleErrorClearing()
+    {
+        IntPtr db = Shim.mgs_open_in_memory();
+        IntPtr tx = Shim.mgs_begin_write(db);
+        Check(Shim.mgs_tx_execute(tx, """(transact [[:broken""") == IntPtr.Zero,
+            "malformed command returns NULL");
+        var error = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+        Check(error is { Category: "Parser" } &&
+              error.Value.Code.StartsWith("PRS-", StringComparison.Ordinal),
+            "parse error structured: " + error);
+        Check(TakeOwnedString(Shim.mgs_tx_execute(tx, """(transact [[:a :v 1]])""")) is not null,
+            "transaction remains usable");
+        Check(Shim.mgs_tx_last_error_json(tx) == IntPtr.Zero,
+            "successful operation cleared the previous structured error");
+        Check(Shim.mgs_tx_commit(tx) == 0, "commit");
+        Check(Shim.mgs_write_tx_free(tx) == 0, "free");
+        Shim.mgs_close(db);
+    }
+
+    private static void TxFailedCommitDiagnostics()
+    {
+        string path = Path.Combine(RootTemp, "tx-commit-fail-" + Guid.NewGuid().ToString("N") + ".graph");
+        string wal = path + ".wal";
+        IntPtr db = Shim.mgs_open(path);
+        Check(db != IntPtr.Zero, "file open");
+        Directory.CreateDirectory(wal);
+        try
+        {
+            IntPtr tx = Shim.mgs_begin_write(db);
+            Check(tx != IntPtr.Zero, "begin write");
+            Check(TakeOwnedString(Shim.mgs_tx_execute(tx, """(transact [[:a :v 1]])""")) is not null,
+                "stage");
+
+            Check(Shim.mgs_tx_commit(tx) == -1, "commit fails with the WAL blocked");
+            var error = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+            Check(error is { Category: "Internal" } &&
+                  error.Value.Code.StartsWith("INT-", StringComparison.Ordinal),
+                "failed commit diagnostics retained after terminalization: " + error);
+            Check(Shim.mgs_write_tx_free(tx) == 0, "free after failed commit");
+            string? rows = TakeOwnedString(Shim.mgs_execute(db, "(query [:find ?e :where [?e :v ?v]])"));
+            Check(rows is not null && rows.Contains("\"results\":[]", StringComparison.Ordinal),
+                "failed commit applied nothing: " + rows);
+            Shim.mgs_close(db);
+        }
+        finally
+        {
+            Directory.Delete(wal);
+        }
+    }
+
+    private static void TxThreadAffinity()
+    {
+        IntPtr db = Shim.mgs_open_in_memory();
+        IntPtr tx = Shim.mgs_begin_write(db);
+        Check(TakeOwnedString(Shim.mgs_tx_execute(tx, """(transact [[:a :v 1]])""")) is not null,
+            "stage on owner thread");
+
+        Exception? workerError = null;
+        var worker = new Thread(() =>
+        {
+            try
+            {
+                Check(Shim.mgs_tx_execute(tx, """(transact [[:b :v 2]])""") == IntPtr.Zero,
+                    "cross-thread execute refused");
+                var executeError = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+                Check(executeError is { Category: "Shim", Code: "MGS-001" },
+                    "cross-thread execute classified Shim/MGS-001: " + executeError);
+                Check(Shim.mgs_tx_commit(tx) == -1, "cross-thread commit refused");
+                var commitError = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+                Check(commitError is { Category: "Shim", Code: "MGS-001" },
+                    "cross-thread commit classified Shim/MGS-001: " + commitError);
+                Check(Shim.mgs_write_tx_free(tx) == -1, "cross-thread free of an open transaction refused");
+                var freeError = TakeErrorJson(Shim.mgs_tx_last_error_json(tx));
+                Check(freeError is { Category: "Shim", Code: "MGS-001" },
+                    "cross-thread free classified Shim/MGS-001: " + freeError);
+            }
+            catch (Exception ex)
+            {
+                workerError = ex;
+            }
+        });
+        worker.Start();
+        worker.Join();
+        Check(workerError is null, "worker assertions: " + workerError?.Message);
+
+        // The wrapper survived the refusals; the owner can still finish.
+        Check(TakeOwnedString(Shim.mgs_tx_execute(tx, """(transact [[:c :v 3]])""")) is not null,
+            "owner thread can still stage");
+        Check(Shim.mgs_tx_commit(tx) == 0, "owner commit succeeds after refused cross-thread probes");
+        Check(Shim.mgs_write_tx_free(tx) == 0, "free from owner after terminalization");
+        string? rows = TakeOwnedString(Shim.mgs_execute(db, "(query [:find ?v :where [?e :v ?v]])"));
+        Check(rows is not null && CountResultRows(rows) == 2,
+            "owner-staged facts committed: " + rows);
+        Shim.mgs_close(db);
+    }
+
+    private static int CountResultRows(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("results").GetArrayLength();
+    }
+
+    private static void TxBeginReentrancy()
+    {
+        IntPtr db = Shim.mgs_open_in_memory();
+        IntPtr tx = Shim.mgs_begin_write(db);
+        Check(tx != IntPtr.Zero, "begin write");
+        Check(Shim.mgs_begin_write(db) == IntPtr.Zero, "second begin refused");
+        var error = TakeErrorJson(Shim.mgs_last_error_json(db));
+        Check(error is { Category: "Internal", Code: "INT-001" },
+            "begin reentrancy classified Internal/INT-001: " + error);
+        Shim.mgs_tx_rollback(tx);
+        Check(Shim.mgs_write_tx_free(tx) == 0, "free");
+        Shim.mgs_close(db);
     }
 
     private static void Case(string name, Action body)

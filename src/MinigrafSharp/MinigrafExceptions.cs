@@ -15,6 +15,27 @@ public class MinigrafException : Exception
         : base(message, innerException)
     {
     }
+
+    /// <summary>
+    /// Coarse native/shim category for this failure, when the native layer
+    /// reported structured information; <see cref="MinigrafNativeErrorCategory.Unknown"/>
+    /// otherwise. The message always preserves the native diagnostic text.
+    /// </summary>
+    public MinigrafNativeErrorCategory NativeCategory { get; private set; }
+        = MinigrafNativeErrorCategory.Unknown;
+
+    /// <summary>
+    /// Stable native reference code (for example <c>PRS-018</c>) or owned-shim
+    /// code (for example <c>MGS-001</c>) when available; null when no stable
+    /// code was reported. Never inferred from message text.
+    /// </summary>
+    public string? NativeCode { get; private set; }
+
+    internal void SetNativeError(MinigrafNativeErrorCategory category, string? code)
+    {
+        NativeCategory = category;
+        NativeCode = code;
+    }
 }
 
 /// <summary>

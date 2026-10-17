@@ -5,8 +5,9 @@ using MinigrafSharp.Native;
 namespace MinigrafSharp.Interop;
 
 /// <summary>
-/// The owned prepared-query shim ABI (<c>native/include/minigrafsharp_shim.h</c>,
-/// shim ABI 0.1.0, exactly the 12 exports qualified at M3.1a). Wrapped surface:
+/// The owned shim ABI (<c>native/include/minigrafsharp_shim.h</c>, shim
+/// ABI 0.1.0: the 12 M3.1 exports plus the M3.2b write-transaction and
+/// structured-error exports). Wrapped surface:
 /// <see cref="Native.SafeMgsDatabaseHandle"/> for databases, plain nint for
 /// prepared queries (freed under the parent's per-database gate, never through
 /// a <c>SafeHandle</c>), <see cref="NativeUtf8"/> for string copies, and
@@ -131,4 +132,63 @@ internal static partial class ShimNativeMethods
         EntryPoint = "mgs_prepared_query_free")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void MgsPreparedQueryFree(nint prepared);
+    // C ABI: MgsWriteTx *mgs_begin_write(MgsDb *handle);
+    // NULL on failure; the structured diagnostic is on the database handle.
+    // Ownership transfers to the caller on success.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_begin_write")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MgsBeginWrite(SafeMgsDatabaseHandle handle);
+
+    // C ABI: char *mgs_tx_execute(MgsWriteTx *tx, const char *datalog);
+    // Owned result JSON or NULL on error (structured diagnostic on the tx).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_tx_execute",
+        StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MgsTxExecute(nint tx, string datalog);
+
+    // C ABI: int mgs_tx_commit(MgsWriteTx *tx);
+    // 0 on success, -1 on failure (diagnostic retained on the wrapper).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_tx_commit")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial int MgsTxCommit(nint tx);
+
+    // C ABI: void mgs_tx_rollback(MgsWriteTx *tx);
+    // Infallible terminal operation.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_tx_rollback")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial void MgsTxRollback(nint tx);
+
+    // C ABI: int mgs_write_tx_free(MgsWriteTx *tx);
+    // Frees the wrapper (rolling back an open inner transaction on the owner
+    // thread). Called exactly once per owned wrapper, under the transaction's
+    // lock, from the owner thread.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_write_tx_free")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial int MgsWriteTxFree(nint tx);
+
+    // C ABI: char *mgs_last_error_json(const MgsDb *handle);
+    // Owned structured error JSON or NULL when there is no error.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_last_error_json")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MgsLastErrorJson(SafeMgsDatabaseHandle handle);
+
+    // C ABI: char *mgs_tx_last_error_json(const MgsWriteTx *tx);
+    // Owned structured error JSON or NULL when there is no error.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_tx_last_error_json")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MgsTxLastErrorJson(nint tx);
 }

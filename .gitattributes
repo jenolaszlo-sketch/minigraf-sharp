@@ -12,4 +12,5 @@
 *.dll binary
 *.so binary
 *.dylib binary
-native/include/* binary
+native/include/minigraf.h binary
+native/include/minigrafsharp_shim.h text eol=lf

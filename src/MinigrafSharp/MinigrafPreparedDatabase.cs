@@ -5,12 +5,13 @@ namespace MinigrafSharp;
 /// <summary>
 /// Owns one native shim <c>MgsDb*</c>. The handle is closed through
 /// <c>mgs_close</c> exactly once during disposal. Prepared queries are
-/// created by <see cref="Prepare"/> and register with this database: the
-/// database cascade-closes registered, still-open queries during its own
-/// disposal, so no managed object outlives or ambiguously owns the native
-/// state it depends on (ADR 0002 hard invariant 3).
-/// Provisional surface (ADR 0002): prepared queries are available only here,
-/// over the owned shim; <see cref="MinigrafDatabase"/> is untouched.
+/// created by <see cref="Prepare"/> and explicit write transactions by
+/// <see cref="BeginWrite"/>; both register with this database and are
+/// cascade-closed during its own disposal, so no managed object outlives or
+/// ambiguously owns the native state it depends on (ADR 0002/0003 ownership
+/// discipline). This is the owned native surface: prepared queries (M3.1)
+/// plus the rich native surface (M3.2); <see cref="MinigrafDatabase"/> stays
+/// the official minigraf-c surface and is untouched.
 /// </summary>
 public sealed class MinigrafPreparedDatabase : IDisposable
 {
@@ -22,6 +23,7 @@ public sealed class MinigrafPreparedDatabase : IDisposable
     internal readonly object _sync = new();
     private readonly List<MinigrafPreparedQuery> _children = [];
     private Native.SafeMgsDatabaseHandle? _handle;
+    private MinigrafWriteTransaction? _writeTransaction;
     private bool _disposed;
 
     private MinigrafPreparedDatabase(Native.SafeMgsDatabaseHandle handle)
@@ -184,17 +186,88 @@ public sealed class MinigrafPreparedDatabase : IDisposable
     }
 
     /// <summary>
-    /// Releases the native database and cascade-closes registered open
-    /// queries first. Idempotent. Waits for any in-flight call on this
-    /// database rather than racing it.
+    /// Begins an explicit write transaction over the owned shim (M3.2b;
+    /// ADR 0003). The engine holds its write mutex for the transaction's
+    /// lifetime and guards writers with a thread-local flag: at most one
+    /// explicit transaction may be open per thread (across all databases),
+    /// and only one per database. A conflicting attempt fails
+    /// deterministically instead of blocking.
     /// </summary>
-    public void Dispose()
+    /// <exception cref="ObjectDisposedException">The database is disposed.</exception>
+    /// <exception cref="InvalidOperationException">A write transaction is
+    /// already open on this thread or on this database.</exception>
+    /// <exception cref="MinigrafExecutionException">The native transaction
+    /// could not be created.</exception>
+    public MinigrafWriteTransaction BeginWrite()
     {
         lock (_sync)
         {
             if (_disposed)
             {
+                throw new ObjectDisposedException(nameof(MinigrafPreparedDatabase));
+            }
+
+            if (MinigrafWriteTransaction.ActiveOnCurrentThread is not null)
+            {
+                throw new InvalidOperationException(
+                    "A write transaction is already open on this thread; the core guards " +
+                    "explicit transactions with a thread-local flag (measured semantics).");
+            }
+
+            MinigrafWriteTransaction? existing = _writeTransaction;
+            if (existing is not null && !existing.IsTerminal)
+            {
+                throw new InvalidOperationException(
+                    "A write transaction is already open on this database; " +
+                    "the engine serializes writers per database.");
+            }
+
+            nint raw = Interop.ShimNativeMethods.MgsBeginWrite(_handle!);
+            if (raw == nint.Zero)
+            {
+                throw CaptureDatabaseExecutionError("mgs_begin_write returned NULL.");
+            }
+
+            var transaction = new MinigrafWriteTransaction(this, raw);
+            _writeTransaction = transaction;
+            MinigrafWriteTransaction.MarkActive(transaction);
+            return transaction;
+        }
+    }
+
+    /// <summary>
+    /// Releases the native database, rolling back any open write transaction
+    /// and cascade-closing registered open queries first. Idempotent. Waits
+    /// for any in-flight call on this database rather than racing it.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">An open write transaction
+    /// exists that was begun on another thread; terminalize it on its owning
+    /// thread first (thread-affine transactions are never torn down
+    /// cross-thread; ADR 0003 amendment 2).</exception>
+    public void Dispose()
+    {
+        // Terminalize an open write transaction before taking the gate: a
+        // concurrent database operation may hold the gate while blocked on
+        // the engine write mutex that only this terminalization can release.
+        MinigrafWriteTransaction? transaction = Volatile.Read(ref _writeTransaction);
+        if (transaction is not null && !transaction.IsTerminal)
+        {
+            transaction.RollbackForCascade();
+        }
+
+        lock (_sync)
+        {
+            if (_disposed)
+            {
                 return;
+            }
+
+            // A transaction could have been begun between the check above and
+            // this gate acquisition; apply the same deterministic rule.
+            transaction = _writeTransaction;
+            if (transaction is not null && !transaction.IsTerminal)
+            {
+                transaction.RollbackForCascade();
             }
 
             _disposed = true;
@@ -215,6 +288,32 @@ public sealed class MinigrafPreparedDatabase : IDisposable
     internal void Unregister(MinigrafPreparedQuery query)
     {
         _children.Remove(query);
+    }
+
+    /// <summary>Unregisters a terminal write transaction.</summary>
+    internal void UnregisterWriteTransaction(MinigrafWriteTransaction transaction)
+    {
+        lock (_sync)
+        {
+            if (ReferenceEquals(_writeTransaction, transaction))
+            {
+                _writeTransaction = null;
+            }
+        }
+    }
+
+    private MinigrafExecutionException CaptureDatabaseExecutionError(string fallback)
+    {
+        Interop.NativeErrorInfo? info = Interop.NativeErrorJson.TryRead(
+            Interop.ShimNativeMethods.MgsLastErrorJson(_handle!));
+        string message = info?.Message ?? fallback;
+        var error = new MinigrafExecutionException(message);
+        if (info is not null)
+        {
+            error.SetNativeError(info.Value.Category, info.Value.Code);
+        }
+
+        return error;
     }
 
     private string[] ReadSlotNames(nint native)

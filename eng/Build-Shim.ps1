@@ -101,8 +101,18 @@ Write-Host "[toolchain] $cargoVersion | $rustcVersion | $cbindgenVersion"
 # 1. Regenerate the header.
 try {
     Push-Location $shimDir
-    & $cbindgen --config cbindgen.toml --crate "minigrafsharp-shim" --output $headerPath 2>&1 | ForEach-Object { Write-Verbose $_ }
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $headerPath)) { throw "cbindgen failed" }
+    # cbindgen warnings go to stderr; Windows PowerShell turns native stderr
+    # into a terminating error under ErrorActionPreference=Stop, so capture
+    # the output under Continue and judge success by exit code only.
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $cbindgenOutput = & $cbindgen --config cbindgen.toml --crate "minigrafsharp-shim" --output $headerPath 2>&1
+        $cbindgenExit = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousEap }
+    foreach ($line in $cbindgenOutput) { Write-Host "$line" }
+    if ($cbindgenExit -ne 0 -or -not (Test-Path $headerPath)) { throw "cbindgen failed ($cbindgenExit)" }
 }
 finally { Pop-Location }
 # Canonicalize newlines: cbindgen output follows the host's line endings on
