@@ -15,8 +15,9 @@ an embedded single-file bi-temporal graph database with Datalog queries.
 > The package is not yet on NuGet.org. See
 > [docs/product-spec.md](docs/product-spec.md) and [ROADMAP.md](ROADMAP.md).
 
-> MinigrafSharp currently targets Minigraf 2.0.5. The upstream v2 storage
-> engine has known edge cases around specific transaction, temporal, and
+> MinigrafSharp currently targets Minigraf 2.0.7 (pinned core refreshed
+> 2026-10-17 from 2.0.5; no C ABI change). The upstream v2 storage engine
+> has known edge cases around specific transaction, temporal, and
 > crash/recovery scenarios. See [docs/v2-qualification.md](docs/v2-qualification.md).
 
 ## Install
@@ -79,7 +80,7 @@ Native refs and keywords arrive as strings at this boundary, and
 non-finite floats arrive as null; see
 [docs/native-boundary.md](docs/native-boundary.md).
 
-Pinned baseline: Minigraf core `v2.0.5`, minigraf-c `v2.0.5`
+Pinned baseline: Minigraf core `v2.0.7`, minigraf-c `v2.0.7`
 (see [native/upstream.json](native/upstream.json)).
 Qualified and packaged platform: `win-x64` (lifecycle, raw/typed execution,
 file persistence, storage/recovery/temporal qualification, NativeAOT,
@@ -93,7 +94,7 @@ qualified observations in [docs/v2-qualification.md](docs/v2-qualification.md).
 - [Architecture](docs/architecture.md): managed/native boundary and ownership.
 - [Native boundary](docs/native-boundary.md): exact C ABI, provenance, loading.
 - [Compatibility](docs/compatibility.md): RID status, wrapper/core matrix.
-- [v2.0.5 qualification](docs/v2-qualification.md): reliability boundary and known upstream limitations.
+- [v2.0.5 qualification](docs/v2-qualification.md): reliability boundary and known upstream limitations, with the v2.0.7 requalification rerun appended.
 - [Hardening](docs/hardening.md): stress, loader/tamper matrices, privacy, release decision.
 - [Verification](docs/verification.md): executed M0–M2.5 evidence.
 - [Decision 0001](docs/decisions/0001-wrap-official-minigraf-c.md): why we wrap minigraf-c.

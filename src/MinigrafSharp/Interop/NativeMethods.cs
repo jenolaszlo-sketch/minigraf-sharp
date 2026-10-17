@@ -7,7 +7,7 @@ namespace MinigrafSharp.Interop;
 /// <summary>
 /// M0 lifecycle plus M1a raw-execution plus M1c persistence subset of the
 /// official minigraf-c ABI (<c>native/include/minigraf.h</c> at minigraf-c
-/// v2.0.5).
+/// v2.0.7).
 /// Source-generated, internal, Cdecl. Raw handles and pointers never leave
 /// this class: callers wrap a non-null database result in
 /// <see cref="Native.SafeMinigrafDatabaseHandle"/>, copy owned or borrowed

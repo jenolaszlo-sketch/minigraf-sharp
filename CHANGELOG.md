@@ -61,3 +61,16 @@ package and never copy the upstream Minigraf version number.
   `eng/Test-PackageConsumer.ps1`; `samples/MinigrafSharp.AotSmoke`,
   `eng/Test-AotConsumer.ps1` and `eng/Test-TrimmedConsumer.ps1` were removed.
   No public API change; publication is a separate explicit dispatch.
+- Maintenance checkpoint: pinned upstream baseline refreshed from Minigraf
+  core/minigraf-c `v2.0.5` to `v2.0.7` (no C ABI change; the additional
+  `checkpoint`/`last_error` surface is unchanged). Every 2.0.7 asset and the
+  header are hash-recorded in `native/upstream.json`; `win-x64` reran the
+  full qualification locally (positive controls for upstream #608/#610 now
+  observed fixed; #371/#287, #477, #435, #374, #535 confirmed still open on
+  the 2.x line; #554/#555/#558 remain not reachable through the wrapper's
+  serialized per-database surface; #603 recorded core-side, managed recheck
+  deferred to the M3.1 prepared-query work). Observable consumer change:
+  queries hit by #608/#610 now return the upstream-correct rows instead of
+  empty or too-few rows. No public API change; managed package version
+  unchanged. Identified RIDs other than `win-x64` remain not requalified and
+  are never recorded as passed.

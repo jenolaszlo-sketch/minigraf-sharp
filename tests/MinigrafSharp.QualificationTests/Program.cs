@@ -37,7 +37,7 @@ void Check(bool condition, string name)
     }
 }
 
-Console.WriteLine("qualification target: Minigraf 2.0.5 / minigraf-c 2.0.5, RID win-x64");
+Console.WriteLine("qualification target: Minigraf 2.0.7 / minigraf-c 2.0.7, RID win-x64");
 
 // Version gate: probes apply only to the pinned baseline (upstream.json is
 // the authority; the pins are read, not assumed).
@@ -50,8 +50,8 @@ if (upstreamJson is not null)
     coreVersion = manifest.RootElement.GetProperty("minigraf").GetProperty("version").GetString() ?? "";
     cVersion = manifest.RootElement.GetProperty("minigraf-c").GetProperty("version").GetString() ?? "";
 }
-Check(coreVersion == "2.0.5", "gate Minigraf 2.0.5");
-Check(cVersion == "2.0.5", "gate minigraf-c 2.0.5");
+Check(coreVersion == "2.0.7", "gate Minigraf 2.0.7");
+Check(cVersion == "2.0.7", "gate minigraf-c 2.0.7");
 
 // Q1. Same-transaction multi-valued facts (upstream #371).
 using (var q1 = MinigrafDatabase.OpenMemory())
@@ -538,6 +538,109 @@ finally
     CleanupDirChecked(q11cdir, "Q11c");
 }
 
+// Q-rule. Upstream #608, fixed in engine v2.0.7: rule calls with literal
+// arguments no longer restrict other callers to the first demand and no
+// longer fail INT-022 when a rule body argument is unbound at the point of
+// demand. Exact fixtures from upstream tests/magic_sets_test.rs at v2.0.7
+// (edge_db and its call shapes). Value normalization mirrors upstream
+// rows(): keyword entities live as UUIDv5(OID, ":kw") refs, result rows may
+// carry the same logical entity as either a Ref or a Keyword, and the
+// minigraf-c JSON boundary flattens both to plain strings. The harness maps
+// known keyword-entity UUIDs back to their keyword text and compares the
+// upstream-expected row strings; unknown strings stay raw.
+using (var qRule = MinigrafDatabase.OpenMemory())
+{
+    qRule.Execute("""(transact [[:a :edge :b] [:b :edge :c]])""");
+    qRule.Execute("(rule [(link ?x ?y) [?x :edge ?y]])");
+    qRule.Execute("(rule [(chain ?x ?y) (link ?x ?y)])");
+    qRule.Execute("(rule [(chain ?x ?y) (link ?x ?m) (chain ?m ?y)])");
+    qRule.Execute("(rule [(any ?x ?y) (link ?x ?y)])");
+
+    var refNames = new Dictionary<string, string>();
+    foreach (string keywordToken in new[] { ":a", ":b", ":c", ":d", ":e" })
+    {
+        refNames[UpstreamKeywordUuid(keywordToken)] = keywordToken;
+    }
+    string Refs(MinigrafResult r) =>
+        string.Join(",", ((MinigrafQueryResult)r).Rows.Select(row => string.Join("|",
+            Enumerable.Range(0, row.Count).Select(i => row[i].Kind == MinigrafValueKind.String
+                ? (refNames.TryGetValue(row[i].GetString() ?? "", out string? name)
+                    ? name
+                    : row[i].GetString())
+                : $"<{row[i].Kind}>"))).Order());
+    void CheckRefs(string query, string expected, string name)
+    {
+        string actual = Refs(qRule.Execute(query));
+        Check(actual == expected, $"{name} (actual '{actual}', expected '{expected}')");
+    }
+
+    // The local keyword->UUIDv5 derivation is confirmed against the engine:
+    // keyword entity refs queried back must normalize to the keyword text.
+    CheckRefs("(query [:find ?e :where [?e :edge :b]])", ":a",
+        "Q-rule keyword-entity ref normalizes to keyword text (:a)");
+    CheckRefs("(query [:find ?e :where [?e :edge :c]])", ":b",
+        "Q-rule keyword-entity ref normalizes to keyword text (:b)");
+
+    Check(CountRows(qRule, "(query [:find ?x :where (chain ?x :c)])") == 2,
+        "Q-rule INT-022 case passes: chain called with a literal argument");
+    CheckRefs("(query [:find ?x :where (chain ?x :c)])", ":a,:b",
+        "Q-rule chain ?x :c returns exactly the producers of :c");
+    CheckRefs("(query [:find ?y :where (chain :a ?y)])", ":b,:c",
+        "Q-rule chain from :a reaches through the recursive body");
+    CheckRefs("(query [:find ?y ?p ?q :where (link ?y :c) (link ?p ?q)])",
+        ":b|:a|:b,:b|:b|:c",
+        "Q-rule same predicate bound and free: the free call keeps every edge");
+    CheckRefs("(query [:find ?y ?p ?q :where (link :a ?y) (link ?p ?q)])",
+        ":b|:a|:b,:b|:b|:c",
+        "Q-rule literal-first variant still returns every edge");
+    CheckRefs("(query [:find ?y ?p ?q :where (link ?y :c) (any ?p ?q)])",
+        ":b|:a|:b,:b|:b|:c",
+        "Q-rule an unadorned rule call beside a literal call keeps every edge");
+    CheckRefs("(query [:find ?x :where (link ?x :c) (chain :a :c)])", ":b",
+        "Q-rule fully bound call beside a free call keeps its rows");
+    CheckRefs("(query [:find ?s ?y ?q :where [?s :edge :b] (link ?s ?y) (chain ?q :c)])",
+        ":a|:b|:a,:a|:b|:b",
+        "Q-rule variable-bound call beside a literal call is not over-guarded");
+
+    // The or/not shapes add one edge, then re-check.
+    qRule.Execute("""(transact [[:b :edge :e]])""");
+    CheckRefs("(query [:find ?x :where (link ?x :c) (or (link ?x :e) (link ?x :d))])", ":b",
+        "Q-rule a call inside an unseeded or branch keeps the joined rows");
+    Check(CountRows(qRule, "(query [:find ?x :where (link ?x :c) (not (link :a ?x))])") == 0,
+        "Q-rule a call inside an unseeded not clause keeps filtering");
+}
+
+// Q-or. Upstream #610, fixed in engine v2.0.7: a disjunction sharing no
+// variable with earlier clauses joins as a cross product. Exact fixtures
+// from upstream tests/disjunction_test.rs at v2.0.7; assertions are row
+// counts plus one content check through the managed decode.
+using (var qOr = MinigrafDatabase.OpenMemory())
+{
+    qOr.Execute("""(transact [[:a :edge :b] [:b :edge :c]])""");
+    static int QOrRows(MinigrafDatabase db, string datalog) =>
+        ((MinigrafQueryResult)db.Execute(datalog)).Rows.Count;
+    Check(QOrRows(qOr, "(query [:find ?x ?p :where [?x :edge ?z] (or [?p :edge :b] [?p :edge :c])])") == 4,
+        "Q-or cross product over a no-shared-variable or: 4 rows");
+    Check(QOrRows(qOr, "(query [:find ?x ?p :where (or [?p :edge :b] [?p :edge :c]) [?x :edge ?z]])") == 4,
+        "Q-or clause order does not change the cross product");
+    Check(QOrRows(qOr, "(query [:find ?z ?p :where [?x :edge ?z] (or [?p :edge :c])])") == 2,
+        "Q-or cross product keeps earlier variables: two z values");
+    var zRows = (MinigrafQueryResult)qOr.Execute("(query [:find ?z ?p :where [?x :edge ?z] (or [?p :edge :c])])");
+    var zValues = zRows.Rows.Select(r => r[0].GetString()!).Order().ToList();
+    var pValues = zRows.Rows.Select(r => r[1].GetString()!).ToList();
+    Check(zValues.Count == 2 && zValues[0] != zValues[1] && pValues.TrueForAll(p => p == pValues[0]),
+        "Q-or the cross product pairs two ?z values with one ?p value");
+    Check(QOrRows(qOr, "(query [:find ?x ?p :where [?x :edge ?z] (or [?p :edge :zz] [?p :edge :yy])])") == 0,
+        "Q-or a no-match branch pair returns no rows at all");
+    Check(QOrRows(qOr, "(query [:find ?x ?p :where [?x :edge ?z] (or (and [?p :edge :b] (not [?p :edge :zz])) [?p :edge :c])])") == 4,
+        "Q-or the seeded path (not branch) gives the same cross product");
+    qOr.Execute("(rule [(pair ?x ?p) [?x :edge ?z] (or [?p :edge :b] [?p :edge :c])])");
+    Check(QOrRows(qOr, "(query [:find ?x ?p :where (pair ?x ?p)])") == 4,
+        "Q-or the same or in a rule body cross products");
+    Check(QOrRows(qOr, "(query [:find ?x ?t ?p :any-valid-time :where [?x :edge ?z] [?x :db/tx-count ?t] (or [?p :edge :c])])") == 2,
+        "Q-or incoming rows with a pseudo-attribute still join");
+}
+
 // Q4. Abrupt termination during an active write/checkpoint loop (5 rounds).
 // Honest scope: the native checkpoint is synchronous and opaque, so the kill
 // can only land between managed operations, never provably inside the native
@@ -620,6 +723,25 @@ static int CountRows(MinigrafDatabase db, string datalog)
 {
     MinigrafQueryResult result = (MinigrafQueryResult)db.Execute(datalog);
     return result.Rows.Count;
+}
+
+// RFC 4122 version-5 UUID (SHA-1, namespace + name) over the OID namespace,
+// exactly the derivation upstream applies to keyword entities
+// (Uuid::new_v5(&Uuid::NAMESPACE_OID, keyword.as_bytes())). Test-harness
+// only: the managed API never assumes or exposes this convention.
+static string UpstreamKeywordUuid(string keyword)
+{
+    byte[] oidNamespace = new byte[]
+    {
+        0x6b, 0xa7, 0xb8, 0x12, 0x9d, 0xad, 0x11, 0xd1,
+        0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
+    };
+    byte[] digest = SHA1.HashData(oidNamespace.Concat(System.Text.Encoding.UTF8.GetBytes(keyword)).ToArray());
+    byte[] uuid = digest.AsSpan(0, 16).ToArray();
+    uuid[6] = (byte)((uuid[6] & 0x0F) | 0x50);
+    uuid[8] = (byte)((uuid[8] & 0x3F) | 0x80);
+    string hex = Convert.ToHexString(uuid).ToLowerInvariant();
+    return $"{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
 }
 
 static string SingleString(MinigrafQueryResult result) =>

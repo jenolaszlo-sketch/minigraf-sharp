@@ -6,7 +6,7 @@ namespace MinigrafSharp;
 /// Decodes the raw JSON produced by <c>minigraf_execute</c> into the managed
 /// result model. Pure managed code over an already-freed native string: it
 /// knows nothing about native handles or interop. Strict and closed: exactly
-/// the four shapes emitted by minigraf-c v2.0.5 decode, everything else
+/// the four shapes emitted by minigraf-c v2.0.7 decode, everything else
 /// fails with <see cref="MinigrafResultException"/>. Unknown extra
 /// properties are ignored only when the known shape is unambiguous and
 /// valid; conflicting result semantics always fail.

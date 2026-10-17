@@ -18,7 +18,7 @@ public class MinigrafException : Exception
 }
 
 /// <summary>
-/// A native database open failed. minigraf-c v2.0.5 exposes no error handle
+/// A native database open failed. minigraf-c v2.0.7 exposes no error handle
 /// for failed opens, so this exception is honest about the missing detail.
 /// </summary>
 public sealed class MinigrafOpenException : MinigrafException

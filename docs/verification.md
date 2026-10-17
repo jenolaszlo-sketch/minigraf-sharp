@@ -566,3 +566,149 @@ the new candidate is `0.1.0-preview.3`.
 CI run identity (run IDs per job), the qualified `preview.3` package
 SHA-256, and the full RID/consumer/AOT matrix are recorded in the release
 report for the qualifying `ci.yml` run for this commit.
+
+---
+
+# Maintenance checkpoint (2.0.7 pin refresh) evidence
+
+Baseline `8710a9c` (the repository state at which this checkpoint was
+executed and approved; the proposal
+`docs/m3-checkpoint-1-proposal.md` and ADR
+`docs/decisions/0002-prepared-queries-owned-shim.md` were reviewed
+untracked at this baseline and are committed with this checkpoint). RID
+`win-x64`, local host: Windows 11 (`Microsoft Windows NT 10.0.26200.0`),
+Intel(R) Core(TM) Ultra 5 125H, SDK 10.0.401 (MSBuild 18.9.11). Engine
+Minigraf `2.0.7` / minigraf-c `2.0.7`; staged asset
+`native/staging/win-x64/minigraf.dll` SHA-256
+`5FB9B8C8A0B4B7D2C37C951A36DEBF45E39D887894ADA1F753630834D390B607`
+(2,150,400 bytes), verified against the digest recorded in
+`native/upstream.json`.
+
+## Pin refresh (exact identity)
+
+- `native/upstream.json`: both pins at `2.0.7` — engine commit
+  `2d2e5d75f28e91d61be9f293de895e2271e62a29`, minigraf-c commit
+  `4b598c043777be51163d3a1f309e7398d060da5d`; header re-sourced from the
+  upstream v2.0.7 raw URL, SHA-256
+  `8603C0745EDE143BC9C231E2812E7BCDC2E9B37186CF3E99E8E8F9AE442ADE7D`,
+  hash-identical to the archived v2.0.5 header (C ABI unchanged; recorded
+  side by side in the header note).
+- Asset digests recorded for five RIDs, all `qualified:false` at first:
+  win-x64 `5FB9B8C8…`, linux-x64 `F7B63251…`, linux-arm64 `4B8BFBC5…`,
+  osx-x64/osx-arm64 `2BD4F21D…` (universal2 asset).
+- `eng/Get-Native.ps1` re-staged `win-x64`, `linux-x64`, `osx-arm64`
+  (downloaded release archives hash-matched); each staging directory
+  carries a freshly written `minigrafsharp-native.json` manifest.
+- `eng/Verify-NativeStaging.ps1`: PASS (exit 0) for `linux-x64`
+  (`F7B63251ED87FCBEC181CF1C0CC5DF1207DC7F74DCF24FB5556FE39B8659ED99`),
+  `osx-arm64` (`2BD4F21D…16` abbreviated:
+  `2BD4F21D6DDEB7EA8F19CDF9FB6467CFB4683E4EE7D0DCF2E9232A6F47B0E6C6`),
+  `win-x64` (`5FB9B8C8A0B4B7D2C37C951A36DEBF45E39D887894ADA1F753630834D390B607`).
+
+## Pin-identity updates (mechanical, no behavior change)
+
+- `src/MinigrafSharp/Native/NativeLoader.cs`: `PinnedMinigrafVersion` /
+  `PinnedMinigrafCVersion` = `2.0.7`; `PinnedMinigrafCommit` =
+  `2d2e5d75…6229`; `PinnedMinigrafCCommit` = `4b598c04…5da5d`.
+- `src/MinigrafSharp/MinigrafDatabase.cs`: both open-failure messages now
+  cite "minigraf-c v2.0.7 exposes no error handle for failed opens".
+- `src/MinigrafSharp/Interop/NativeMethods.cs`: header scope comment cites
+  minigraf-c v2.0.7.
+- `src/MinigrafSharp/MinigrafExceptions.cs`: `MinigrafOpenException` doc
+  comment cites minigraf-c v2.0.7.
+- `src/MinigrafSharp/Results/MinigrafResultDecoder.cs`: decoder doc comment
+  cites the four shapes emitted by minigraf-c v2.0.7.
+- No other `.cs` file changed. Public API inventory unchanged (46 members,
+  sha256 `7D299F8EB11A1EDA218BA8DFA0E24033AEC824DBCE9A47CC9E4093003A7277D2`
+  — printed by the unit harness).
+
+## Qualification rerun (win-x64, v2.0.7 binaries)
+
+Gates read the pins from `native/upstream.json`: "gate Minigraf 2.0.7",
+"gate minigraf-c 2.0.7" PASS before any probe.
+
+- Build `dotnet build MinigrafSharp.slnx -c Release`: succeeded on
+  net8.0 + net10.0, 0 warnings / 0 errors.
+- Qualification harness
+  (`dotnet run --project tests/MinigrafSharp.QualificationTests -c Release --no-build -f <tfm>`):
+  net10.0 PASS exit 0; net8.0 PASS exit 0.
+- Unit harness (`tests/MinigrafSharp.Tests`): net10.0 and net8.0
+  `ALL UNIT TESTS PASSED`, exit 0.
+- Integration harness (`tests/MinigrafSharp.IntegrationTests`): net10.0
+  and net8.0 `ALL INTEGRATION TESTS PASSED`, exit 0.
+- `dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore`:
+  exit 0.
+- New rerun probes (2.0.7 positive controls; details in the
+  [v2-qualification.md `2.0.7 rerun` section](v2-qualification.md)):
+  - Q-rule (#608): keyword-entity UUID normalization verified against the
+    engine first (`(":a"→ref)`/`(":b"→ref)` queries normalize to `:a`/`:b`);
+    then 10 upstream-mirror asserts passed, including the INT-022 case
+    `(chain ?x :c)` (2 rows `:a,:b`), same-predicate bound+free calls
+    keeping every edge, and unseeded `or`/`not` call shapes.
+  - Q-or (#610): 8 upstream-mirror asserts passed (cross product 4 rows
+    both clause orders, matched-branch 2 rows with the single `?p` value,
+    no-match 0 rows, `not`-branch seeded cross product, rule-body `or`
+    cross product, `:db/tx-count` pseudo-attribute join).
+  - Observation method: probe contents were first taken from the exact
+    upstream `magic_sets_test.rs` and `disjunction_test.rs` sources at
+    v2.0.7 (fetched from the minigraf v2.0.7 tag), then asserted on the
+    managed decode. Two false starts were corrected in the probe harness
+    only (a row-formatting separator mismatch in the expected strings and
+    one wrong expected row); the engine data was never adjusted to fit.
+- Tripwires stay: #371 (same-tx multi-value), #435/#374 (valid-time
+  windows), #535 (old-graph+newer-WAL) reproduce unchanged; #477 remains
+  core-WriteTransaction-level and not reachable via minigraf-c Datalog;
+  #554/#555/#558 remain not reachable through the wrapper's serialized
+  per-database surface (per-database `_sync` gate; engine-side fixes from
+  v2.0.6 release notes, adopted by the pin bump); #603 remains not
+  reachable through the official C surface (no prepared-statement API in
+  minigraf-c v2.0.7), core-side fix facts recorded from the v2.0.7 source
+  (`src/query/datalog/prepared.rs` compared against v2.0.5 — delta is the
+  #603 fix), managed recheck scheduled inside M3.1.
+
+## Documentation updates (identity lines)
+
+- `docs/native-boundary.md`: pinned-baseline paragraph and the two decode
+  notes now cite the v2.0.7 pin/commits (header note records hash identity
+  with v2.0.5).
+- `docs/compatibility.md`: pinned table (v2.0.7/`2d2e5d7`/`4b598c0`);
+  RID table distinguishes v2.0.7-local qualification (win-x64) from the
+  prior v2.0.5-era CI qualification (linux-x64/osx-arm64 marked "rerun
+  pending"); the v2.0.5 section is annotated as historical evidence; a new
+  "Minigraf v2.0.7 requalification" section records observed statuses.
+- `docs/hardening.md`: decoder-shape text and storage-limitation line cite
+  v2.0.7 (semantics unchanged).
+- `README.md`: baseline line v2.0.7, target-version note, docs index entry.
+- `CHANGELOG.md`: maintenance-checkpoint entry under Unreleased.
+- `docs/v2-qualification.md`: appended `v2.0.7 rerun` section (append-only;
+  M1d content untouched).
+- `ROADMAP.md`: intentionally NOT updated here — the file carries an
+  unrelated uncommitted user edit that this checkpoint must not ride
+  along with; the planned M3 sub-note is deferred to a follow-up commit.
+
+## RID qualification status
+
+- `win-x64`: qualified on the v2.0.7 binaries by this rerun (marked
+  `qualified:true` in `native/upstream.json` after the green rerun).
+- `linux-x64`, `osx-arm64`: previously CI-qualified on the v2.0.5
+  binaries; the v2.0.7 rerun has NOT executed on their platforms yet —
+  recorded pending, never passed.
+- `linux-arm64`, `osx-x64`: unqualified (unchanged; assets hash-recorded).
+
+## Cleanup
+
+All destructive qualification fixtures run under a guarded temp root and
+are deleted by each probe's `finally` block; every run this checkpoint used
+`C:\Windows\TEMP\opencode\MinigrafSharp.Qualification\` and left it empty
+after the runners exited (the harness asserts each cleanup and surfaces
+failures — no cleanup failures were reported in any run).
+
+## Scope confirmation (maintenance checkpoint)
+
+Restricted storage, recovery, temporal or prepared-query semantics added to
+`src/`: none. New public API: none. New RID qualification beyond win-x64:
+none, and none recorded as passed without execution. Behavior changes
+limited to the upstream-corrected query results of #608/#610 (empty/too-few
+rows previously returned now return the upstream-correct rows; upstream
+states stored data was never affected). No Gagamba/Penghou sibling
+repository touched.

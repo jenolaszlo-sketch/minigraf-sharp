@@ -2,8 +2,8 @@
 
 | Layer | Pinned |
 | --- | --- |
-| Minigraf core | `v2.0.5` (`a861e55`) |
-| minigraf-c | `v2.0.5` (`8422f9f`) |
+| Minigraf core | `v2.0.7` (`2d2e5d7`) |
+| minigraf-c | `v2.0.7` (`4b598c0`) |
 | C header | `native/include/minigraf.h`, SHA-256 `8603C074…ADE7D` |
 | MinigrafSharp | `0.1.0-preview.3` (qualified release candidate) |
 | Managed TFMs | `net8.0`, `net10.0` |
@@ -19,9 +19,9 @@ that CI qualified on their own OS, so qualified = packaged.
 
 | RID | Asset source | Packaged | Qualified | NativeAOT | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `win-x64` | upstream windows x86_64 zip | yes | yes | yes (net10.0) | lifecycle + execution + persistence + v2 qualification |
-| `linux-x64` | upstream linux x86_64 | yes | yes | yes (net10.0) | CI-qualified on `ubuntu-latest` |
-| `osx-arm64` | upstream macos universal2 | yes | yes | yes (net10.0) | CI-qualified on `macos-latest` |
+| `win-x64` | upstream windows x86_64 zip | yes | yes (v2.0.7: local requalification, 2026-10-17) | yes (net10.0) | lifecycle + execution + persistence + v2 qualification |
+| `linux-x64` | upstream linux x86_64 | yes | yes on v2.0.5 binaries; v2.0.7 rerun pending | yes (net10.0) | CI-qualified on `ubuntu-latest` (v2.0.5 era) |
+| `osx-arm64` | upstream macos universal2 | yes | yes on v2.0.5 binaries; v2.0.7 rerun pending | yes (net10.0) | CI-qualified on `macos-latest` (v2.0.5 era) |
 | `linux-arm64` | upstream linux aarch64 | no | no | unqualified | deferred: no runner yet |
 | `osx-x64` | upstream macos universal2 | no | no | unqualified | deferred: universal2 asset matches, no runner yet |
 
@@ -38,7 +38,11 @@ asset hashes and exports, reruns the full matrix per RID, and updates this
 file, `verification.md` and `CHANGELOG.md`. Managed package versions follow
 public API impact, never the upstream number.
 
-## Minigraf v2.0.5 qualification
+## Minigraf v2.0.5 qualification (historical M1d evidence)
+
+Measured on the v2.0.5 binaries; the facts below were recorded at the
+v2.0.5 pin and are kept verbatim. The v2.0.7 requalification status of each
+item is in the next section and in [v2-qualification.md](v2-qualification.md).
 
 Full evidence and per-probe results: [v2-qualification.md](v2-qualification.md).
 
@@ -69,3 +73,33 @@ Full evidence and per-probe results: [v2-qualification.md](v2-qualification.md).
 - Depending on valid-time window replacement.
 - Restoring a `.graph` while a newer `.wal` is present.
 - Assuming recursive rules survive reopen (re-declare per open).
+
+## Minigraf v2.0.7 requalification (2026-10-17, win-x64)
+
+The pin moved from v2.0.5 to v2.0.7 with no C ABI change (the v2.0.6 and
+v2.0.7 `minigraf.h` are hash-identical to the archived v2.0.5 header).
+Observed on the v2.0.7 binaries; exact checks in
+[v2-qualification.md](v2-qualification.md):
+
+- Observed fixed by the pin bump (upstream release-note fixes, reproduced
+  here as positive controls): #608 (rule calls with literal arguments) and
+  #610 (`or` without shared variables now joins as a cross product). Caller
+  behavior change: queries that previously returned empty or missing rows
+  now return the upstream-correct rows; stored data was never affected.
+- Not reachable through the wrapper's serialized per-database surface, so
+  no wrapper-observable change up to 2.0.7: #554/#555/#558 (upstream fixed
+  them engine-side in v2.0.6; the wrapper cannot interleave execute and
+  checkpoint on one handle, so the wrapper surface never exhibited them).
+- Not reachable through the official C surface: #603 (prepared queries
+  dropped a literal `:as-of`/`:valid-at` when binding slots; fixed in
+  v2.0.7 core, but no prepared-statement function exists in minigraf-c).
+  Managed recheck scheduled with the M3.1 prepared-query shim.
+- Still open on the 2.x line (unchanged from v2.0.5): same-transaction
+  multi-valued facts (#371/#287), WriteTransaction retract/re-assert (#477),
+  valid-time window replacement (#435), overlapping window non-replacement
+  (#374), old-graph/newer-WAL acceptance (#535). The "avoid" guidance above
+  carries forward unchanged on v2.0.7.
+- Qualified RID for this requalification: `win-x64` via the three local
+  harnesses and the Q-rule/Q-or probes. `linux-x64`/`osx-arm64` requalify
+  when CI reruns on the v2.0.7 assets; no unqualified RID is recorded as
+  passed.

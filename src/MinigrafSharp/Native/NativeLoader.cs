@@ -15,10 +15,10 @@ internal static class NativeLoader
     internal const string OverrideVariable = "MINIGRAFSHARP_NATIVE_PATH";
     internal const string LibraryName = "minigraf";
 
-    internal const string PinnedMinigrafVersion = "2.0.5";
-    internal const string PinnedMinigrafCommit = "a861e551162623c8f4752f94daf5b637543f8358";
-    internal const string PinnedMinigrafCVersion = "2.0.5";
-    internal const string PinnedMinigrafCCommit = "8422f9f048d8821a759cbe9e1c2ea6b8f53621dc";
+    internal const string PinnedMinigrafVersion = "2.0.7";
+    internal const string PinnedMinigrafCommit = "2d2e5d75f28e91d61be9f293de895e2271e62a29";
+    internal const string PinnedMinigrafCVersion = "2.0.7";
+    internal const string PinnedMinigrafCCommit = "4b598c043777be51163d3a1f309e7398d060da5d";
 
     private static readonly object Sync = new();
     private static nint _handle;

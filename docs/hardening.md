@@ -16,7 +16,7 @@ Baseline compared against: `d56e021`.
 ## Result-decoder defect (fixed)
 
 `MinigrafResultDecoder` documents a closed contract: exactly the shapes
-emitted by minigraf-c v2.0.5 decode, and **everything else fails with
+emitted by minigraf-c v2.0.7 decode, and **everything else fails with
 `MinigrafResultException`**. A hostile result string containing an unpaired
 UTF-16 surrogate escape (`{"variables":["?v"],"results":[["\ud800"]]}`)
 parsed successfully but made `JsonElement.GetString()` throw
@@ -150,7 +150,7 @@ dependencies**.
 ## Known remaining risks / non-blocking
 
 - Only `win-x64` is packaged/qualified; other RIDs deferred (needs execution).
-- Upstream Minigraf v2.0.5 storage limitations remain (see
+- Upstream Minigraf v2.0.7 storage limitations remain (see
   [v2-qualification.md](v2-qualification.md)).
 - `MINIGRAFSHARP_NATIVE_PATH` override is unverified (documented above).
 - Native-load diagnostics are developer-facing and include probed paths.

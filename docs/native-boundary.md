@@ -1,10 +1,11 @@
 # Native boundary (M1c)
 
-Pinned baseline: Minigraf core `v2.0.5`
-(`a861e551162623c8f4752f94daf5b637543f8358`), minigraf-c `v2.0.5`
-(`8422f9f048d8821a759cbe9e1c2ea6b8f53621dc`). Full provenance in
+Pinned baseline: Minigraf core `v2.0.7`
+(`2d2e5d75f28e91d61be9f293de895e2271e62a29`), minigraf-c `v2.0.7`
+(`4b598c043777be51163d3a1f309e7398d060da5d`). Full provenance in
 `native/upstream.json`; archived header `native/include/minigraf.h`
-(SHA-256 `8603C0745EDE143BC9C231E2812E7BCDC2E9B37186CF3E99E8E8F9AE442ADE7D`).
+(SHA-256 `8603C0745EDE143BC9C231E2812E7BCDC2E9B37186CF3E99E8E8F9AE442ADE7D`,
+hash-identical to the v2.0.5-era header: the C ABI is unchanged).
 
 ## C functions (from the pinned header)
 
@@ -82,10 +83,10 @@ inherited as documented semantics, not repaired:
   upstream C boundary exposes richer types; the wrapper never infers refs
   from UUID shapes or keywords from `:` prefixes.
 - Native non-finite floats (`NaN`, `±Infinity`) serialize as JSON null
-  (`Number::from_f64(...).unwrap_or(Null)` in minigraf-c v2.0.5), so they
+  (`Number::from_f64(...).unwrap_or(Null)` in minigraf-c v2.0.7), so they
   decode as `MinigrafValueKind.Null`, indistinguishable from native null.
 
-Upstream representations this documents against (pinned v2.0.5 source):
+Upstream representations this documents against (pinned v2.0.7 source):
 `TxId = u64` (transaction ids), `Value::Integer(i64)`,
 `Value::Float(f64)`, `Value::Boolean(bool)`, result JSON shapes
 `{"transacted":…}`, `{"retracted":…}`, `{"ok":true}`,

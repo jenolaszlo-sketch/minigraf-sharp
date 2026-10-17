@@ -33,7 +33,7 @@ public sealed class MinigrafDatabase : IDisposable
         {
             throw new MinigrafOpenException(
                 "minigraf_open_in_memory returned NULL. " +
-                "minigraf-c v2.0.5 exposes no error handle for failed opens, " +
+                "minigraf-c v2.0.7 exposes no error handle for failed opens, " +
                 "so no further native diagnostic is available.");
         }
 
@@ -67,7 +67,7 @@ public sealed class MinigrafDatabase : IDisposable
             // managed side actually has for a failed open.
             throw new MinigrafOpenException(
                 $"minigraf_open returned NULL for '{path}'. " +
-                "minigraf-c v2.0.5 exposes no error handle for failed opens, " +
+                "minigraf-c v2.0.7 exposes no error handle for failed opens, " +
                 "so no further native diagnostic is available.");
         }
 
