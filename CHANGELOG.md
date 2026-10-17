@@ -3,6 +3,28 @@
 Format follows Keep a Changelog. Versions follow SemVer for the managed
 package and never copy the upstream Minigraf version number.
 
+## [0.1.0-preview.4] - 2026-10-17
+
+Freeze and first release of the qualified M3.1 surface. This release
+contains the entries listed under Unreleased through M3.1c (typed
+`MinigrafDatabase` surface, packaging and CI qualification for
+`win-x64`/`linux-x64`/`osx-arm64`, the owned prepared-query shim, and the
+provisional `MinigrafPreparedDatabase`/`MinigrafPreparedQuery`/
+`MinigrafBindValue` surface with its 26-case managed qualification and
+loader identity verification). The public M3.1 surface is frozen for this
+line; see `docs/release-review-0.1.0-preview.4.md` for the independent
+release review and the exact trusted-publishing procedure (artifact from
+the validated CI run, never rebuilt). `linux-arm64`/`osx-x64` remain
+unqualified.
+
+### Fixed
+
+- Release pipeline: `publish.yml` and `verify-published.yml` now download
+  the per-RID staging artifacts from the validated CI run before package
+  verification, since package verification includes the owned shim's
+  chain of custody (staged binary -> qualification manifest -> package
+  entry). Release notes now state the actual pinned upstream version.
+
 ## [Unreleased]
 
 ### Added

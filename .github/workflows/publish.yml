@@ -100,6 +100,19 @@ jobs:
           RUN_ID: ${{ steps.release.outputs.ci_run_id }}
         run: gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name nupkg --dir artifacts/packages
 
+      # Package verification includes the owned shim's chain of custody
+      # (staged binary -> staged qualification manifest -> package entry), so
+      # the exact per-RID staging artifacts from the same validated run are
+      # required. Nothing is rebuilt here.
+      - name: Download staging artifacts from validated CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.release.outputs.ci_run_id }}
+        run: |
+          for rid in win-x64 linux-x64 osx-arm64; do
+            gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "staging-$rid" --dir "native/staging/$rid"
+          done
+
       - name: Verify package
         shell: pwsh
         run: |

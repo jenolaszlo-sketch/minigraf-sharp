@@ -39,7 +39,7 @@
   Skip the loader hardening checks (used when AOT/Trim already covers loading).
 
 .EXAMPLE
-  powershell -NoProfile -ExecutionPolicy Bypass -File eng/Test-PackageConsumer.ps1 -Package artifacts/packages/MinigrafSharp.0.1.0-preview.3.nupkg -TargetFramework net10.0 -Aot -Rid win-x64
+  powershell -NoProfile -ExecutionPolicy Bypass -File eng/Test-PackageConsumer.ps1 -Package artifacts/packages/MinigrafSharp.0.1.0-preview.4.nupkg -TargetFramework net10.0 -Aot -Rid win-x64
 #>
 [CmdletBinding()]
 param(

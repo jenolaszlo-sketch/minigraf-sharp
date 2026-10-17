@@ -94,6 +94,27 @@ jobs:
           path: artifacts/packages
           run-id: ${{ steps.selection.outputs.ci_run_id }}
           github-token: ${{ github.token }}
+      # Package verification includes the owned shim's chain of custody, so
+      # the exact per-RID staging artifacts from the same validated run are
+      # required.
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-win-x64
+          path: native/staging/win-x64
+          run-id: ${{ steps.selection.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-linux-x64
+          path: native/staging/linux-x64
+          run-id: ${{ steps.selection.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-osx-arm64
+          path: native/staging/osx-arm64
+          run-id: ${{ steps.selection.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
 
       - name: Verify package and wait for public indexing
         id: verify
@@ -187,7 +208,7 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "release $tag already exists"
           else
-            notes=$(printf 'MinigrafSharp %s\n\nQualified on win-x64, linux-x64, and osx-arm64 for .NET 8 and .NET 10. NativeAOT qualified on all three RIDs with .NET 10. Uses Minigraf/minigraf-c v2.0.5. This is a preview release; see the compatibility and v2 qualification documentation for known upstream storage/recovery limitations.\n\nPackage SHA-256: %s\n' "$VERSION" "$PACKAGE_SHA")
+            notes=$(printf 'MinigrafSharp %s\n\nQualified on win-x64, linux-x64, and osx-arm64 for .NET 8 and .NET 10. NativeAOT qualified on all three RIDs with .NET 10. Includes the owned prepared-query shim and the provisional prepared-query surface (ADR 0002). Uses Minigraf/minigraf-c v2.0.7. This is a preview release; see the compatibility and v2 qualification documentation for known upstream storage/recovery limitations.\n\nPackage SHA-256: %s\n' "$VERSION" "$PACKAGE_SHA")
             gh release create "$tag" --title "MinigrafSharp $VERSION" --notes "$notes" --target "$SHA" --prerelease
             echo "created pre-release $tag"
           fi

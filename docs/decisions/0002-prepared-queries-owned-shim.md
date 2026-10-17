@@ -1,7 +1,8 @@
 # ADR 0002 draft / M3.1 checkpoint proposal - prepared queries over an owned native shim
 
-Status: proposed (revised 2026-10-17 after review round 1), not yet
-accepted. Doubles as the M3.1 checkpoint proposal.
+Status: accepted 2026-10-17 as the basis of M3.1a/M3.1b/M3.1c after review
+rounds; executed and qualified per docs/verification.md (M3.1a/M3.1b/M3.1c
+evidence). Doubles as the M3.1 checkpoint proposal.
 
 Revision notes for this draft (review round 1):
 

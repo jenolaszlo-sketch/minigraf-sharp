@@ -7,7 +7,7 @@
     <RootNamespace>MinigrafSharp</RootNamespace>
 
     <PackageId>MinigrafSharp</PackageId>
-    <Version>0.1.0-preview.3</Version>
+    <Version>0.1.0-preview.4</Version>
     <Title>MinigrafSharp</Title>
     <Description>An independent .NET binding for Minigraf using the official minigraf-c API.</Description>
     <PackageProjectUrl>https://github.com/jenolaszlo-sketch/minigraf-sharp</PackageProjectUrl>
