@@ -7,16 +7,33 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
-  <!-- The shim harness needs BOTH the owned shim and the official binding -->
-  <!-- (identity gate + cross-library handoff cases). Only win-x64 is qualified. -->
-  <ItemGroup Condition="Exists('../../native/staging/win-x64/minigraf.dll')">
-    <None Include="../../native/staging/win-x64/minigraf.dll"
-          Link="runtimes/win-x64/native/minigraf.dll"
+  <!-- The shim harness needs BOTH the owned shim and the official engine -->
+  <!-- (identity gate + cross-library handoff cases). The host RID is      -->
+  <!-- deployed; only RIDs built by the per-OS qualification pipeline are  -->
+  <!-- present at run time.                                               -->
+  <PropertyGroup>
+    <NativeRid Condition="'$(NativeRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</NativeRid>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NativeRid)' == 'win-x64'">
+    <OfficialNativeFile>minigraf.dll</OfficialNativeFile>
+    <ShimNativeFile>minigrafsharp_shim.dll</ShimNativeFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NativeRid)' == 'linux-x64'">
+    <OfficialNativeFile>libminigraf.so</OfficialNativeFile>
+    <ShimNativeFile>libminigrafsharp_shim.so</ShimNativeFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NativeRid)' == 'osx-arm64'">
+    <OfficialNativeFile>libminigraf.dylib</OfficialNativeFile>
+    <ShimNativeFile>libminigrafsharp_shim.dylib</ShimNativeFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OfficialNativeFile)' != '' And Exists('$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(OfficialNativeFile)')">
+    <None Include="$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(OfficialNativeFile)"
+          Link="runtimes/$(NativeRid)/native/$(OfficialNativeFile)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <ItemGroup Condition="Exists('../../native/staging/win-x64/minigrafsharp_shim.dll')">
-    <None Include="../../native/staging/win-x64/minigrafsharp_shim.dll"
-          Link="runtimes/win-x64/native/minigrafsharp_shim.dll"
+  <ItemGroup Condition="'$(ShimNativeFile)' != '' And Exists('$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(ShimNativeFile)')">
+    <None Include="$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(ShimNativeFile)"
+          Link="runtimes/$(NativeRid)/native/$(ShimNativeFile)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

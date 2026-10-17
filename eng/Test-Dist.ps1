@@ -4,10 +4,15 @@
 
 .DESCRIPTION
   1. eng/Get-Native.ps1 -Rid <rid> stages and hash-verifies the pinned asset.
-  2. eng/Verify-NativeStaging.ps1 -Rid <rid> re-verifies inventory, hashes,
-     manifest and binary format/architecture.
-  3. Builds the solution and runs the real-engine unit, integration and
+  2. Builds the solution and runs the real-engine unit, integration and
      storage/recovery qualification suites for net8.0 and net10.0 on this OS.
+  3. eng/Build-Shim.ps1 -Rid <rid> builds the owned shim for this host
+     (cargo --locked unit tests + release build), stages it next to the
+     engine, and refreshes the shim provenance pins.
+  4. eng/Verify-NativeStaging.ps1 -Rid <rid> verifies the complete staged
+     inventory (official engine + shim), hashes, manifests and formats.
+  5. Runs the shim harness and the managed prepared-query qualification
+     harness for net8.0 and net10.0.
 
   The caller uploads native/staging/<rid> as the CI artifact consumed by the
   pack job. See .github/workflows/ci.yml and docs/packaging.md.
@@ -45,7 +50,6 @@ function Run([string]$label, [string[]]$dotnetArgs) {
 }
 
 & (Join-Path $PSScriptRoot "Get-Native.ps1") -Rid $Rid
-& (Join-Path $PSScriptRoot "Verify-NativeStaging.ps1") -Rid $Rid
 
 Push-Location -LiteralPath $repoRoot
 try {
@@ -56,6 +60,21 @@ try {
         Run "unit $tfm" @("run", "--project", "tests/MinigrafSharp.Tests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "integration $tfm" @("run", "--project", "tests/MinigrafSharp.IntegrationTests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "qualification $tfm" @("run", "--project", "tests/MinigrafSharp.QualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
+    }
+}
+finally { Pop-Location }
+
+& (Join-Path $PSScriptRoot "Build-Shim.ps1") -Rid $Rid
+& (Join-Path $PSScriptRoot "Verify-NativeStaging.ps1") -Rid $Rid
+
+Push-Location -LiteralPath $repoRoot
+try {
+    Run "restore (shim harnesses)" @("restore", "MinigrafSharp.slnx")
+    Run "build (shim harnesses)" @("build", "MinigrafSharp.slnx", "-c", "Release", "--no-restore")
+
+    foreach ($tfm in @("net8.0", "net10.0")) {
+        Run "shim $tfm" @("run", "--project", "tests/MinigrafSharp.ShimTests", "-c", "Release", "--no-build", "-f", $tfm)
+        Run "prepared $tfm" @("run", "--project", "tests/MinigrafSharp.PreparedQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
     }
 }
 finally { Pop-Location }

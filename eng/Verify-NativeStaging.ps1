@@ -1,23 +1,25 @@
 <#
 .SYNOPSIS
-  Verifies a staged Minigraf native asset for one RID (or all staged RIDs).
+   Verifies staged Minigraf native assets for one RID (or all staged RIDs),
+   official engine and owned shim.
 
 .DESCRIPTION
-  For each staged RID under native/staging/<rid>/, checks the exact file
-  inventory (the native library plus the manifest), recomputes the binary
-  SHA-256 and compares it to native/upstream.json, cross-checks every manifest
-  field against the pin, and confirms the binary's container format and CPU
-  architecture match the RID (PE/x86-64, ELF/x86-64 or ELF/AArch64, Mach-O
-  arm64 or universal). Fails closed on anything missing or mismatched.
+   For each staged RID under native/staging/<rid>/, checks the exact file
+   inventory (the official engine binary plus its manifest, and the owned
+   shim binary plus its manifest), recomputes both SHA-256 hashes and
+   compares them to native/upstream.json, cross-checks every manifest field
+   against the pins, and confirms both binaries' container format and CPU
+   architecture match the RID (PE/x86-64, ELF/x86-64 or ELF/AArch64, Mach-O
+   arm64 or universal). Fails closed on anything missing or mismatched.
 
 .PARAMETER Rid
-  Optional single RID. Defaults to every staged RID.
+   Optional single RID. Defaults to every staged RID.
 
 .PARAMETER StagingRoot
-  Optional staging root. Defaults to native/staging.
+   Optional staging root. Defaults to native/staging.
 
 .EXAMPLE
-  powershell -NoProfile -ExecutionPolicy Bypass -File eng/Verify-NativeStaging.ps1 -Rid osx-arm64
+   powershell -NoProfile -ExecutionPolicy Bypass -File eng/Verify-NativeStaging.ps1 -Rid osx-arm64
 #>
 [CmdletBinding()]
 param(
@@ -70,15 +72,21 @@ foreach ($r in $rids) {
     if ($r -notin $knownRids) { Fail "unexpected staged directory '$r'" }
     $asset = $upstream.assets."$r"
     if ($null -eq $asset) { Fail "$r : no pin in native/upstream.json" }
+    $shimAsset = $upstream.shim.assets."$r"
+    if ($null -eq $shimAsset) { Fail "$r : no shim block in native/upstream.json" }
     $binary = $asset.binary
+    $shimBinary = $shimAsset.binary
     $stage = Join-Path $StagingRoot $r
     $binaryPath = Join-Path $stage $binary
     $manifestPath = Join-Path $stage "minigrafsharp-native.json"
-    if (-not (Test-Path -LiteralPath $binaryPath)) { Fail "$r : missing $binary" }
-    if (-not (Test-Path -LiteralPath $manifestPath)) { Fail "$r : missing minigrafsharp-native.json" }
+    $shimBinaryPath = Join-Path $stage $shimBinary
+    $shimManifestPath = Join-Path $stage "minigrafsharp-shim.json"
+    foreach ($p in @($binaryPath, $manifestPath, $shimBinaryPath, $shimManifestPath)) {
+        if (-not (Test-Path -LiteralPath $p)) { Fail "$r : missing $(Split-Path -Leaf $p)" }
+    }
 
     $inventory = @(Get-ChildItem -File -LiteralPath $stage | Select-Object -ExpandProperty Name | Sort-Object)
-    $expected = @($binary, "minigrafsharp-native.json") | Sort-Object
+    $expected = @($binary, "minigrafsharp-native.json", $shimBinary, "minigrafsharp-shim.json") | Sort-Object
     if (($inventory -join "|") -ne ($expected -join "|")) {
         Fail "$r : unexpected staging inventory: $($inventory -join ', ')"
     }
@@ -107,8 +115,50 @@ foreach ($r in $rids) {
         }
     }
 
+    # Chain of custody for the owned shim: the staged binary must match the
+    # manifest produced by the same qualification build. The shim is built
+    # from source on each OS and is not byte-reproducible across linker
+    # timestamps/toolchains, so `shim.assets.<rid>.binary_sha256` in
+    # native/upstream.json is the recorded evidence-bound artifact (see
+    # docs/verification.md), not a cross-build invariant. A divergence is
+    # expected after a fresh build and is reported, never silently accepted
+    # as equality.
+    $shimHash = (Get-FileHash -LiteralPath $shimBinaryPath -Algorithm SHA256).Hash.ToUpperInvariant()
+    $shimManifest = Get-Content -LiteralPath $shimManifestPath -Raw | ConvertFrom-Json
+    $manifestShimHash = "$($shimManifest.binary_sha256)".ToUpperInvariant()
+    if ($shimHash -ne $manifestShimHash) {
+        Fail "$r : shim binary SHA-256 $shimHash does not match its staged manifest $manifestShimHash"
+    }
+    if ($shimAsset.binary_sha256 -and $shimAsset.binary_sha256.ToUpperInvariant() -ne $shimHash) {
+        Write-Output "NOTE ${r}: staged shim sha256 $shimHash differs from the recorded evidence-bound artifact $($shimAsset.binary_sha256); this is expected for a fresh build and the evidence commit records the qualified artifact."
+    }
+
+    $shimChecks = @(
+        @{ Field = "rid"; Expected = $r; Actual = $shimManifest.rid },
+        @{ Field = "artifact"; Expected = $shimBinary; Actual = $shimManifest.artifact },
+        @{ Field = "binary_sha256"; Expected = $shimHash; Actual = $manifestShimHash },
+        @{ Field = "shim_abi"; Expected = $upstream.shim.abi; Actual = $shimManifest.shim_abi },
+        @{ Field = "shim_source_revision"; Expected = [int64]$upstream.shim.source_revision; Actual = [int64]$shimManifest.shim_source_revision },
+        @{ Field = "core_version"; Expected = $upstream.minigraf.version; Actual = $shimManifest.core_version },
+        @{ Field = "core_commit"; Expected = $upstream.minigraf.commit; Actual = $shimManifest.core_commit },
+        @{ Field = "crate_pin_version"; Expected = $upstream.minigraf.version; Actual = $shimManifest.crate_pin.version },
+        @{ Field = "crate_pin_tarball_sha256"; Expected = $upstream.shim.crate.pinned_minigraf.tarball_sha256; Actual = "$($shimManifest.crate_pin.tarball_sha256)".ToUpperInvariant() },
+        @{ Field = "crate_pin_tarball_bytes"; Expected = $upstream.shim.crate.pinned_minigraf.tarball_bytes; Actual = [int64]$shimManifest.crate_pin.tarball_bytes }
+    )
+    foreach ($c in $shimChecks) {
+        if ("$($c.Actual)" -ne "$($c.Expected)") {
+            Fail "$r : shim manifest field '$($c.Field)' is '$($c.Actual)', expected '$($c.Expected)'"
+        }
+    }
+    foreach ($toolField in @("rustc", "cargo", "cbindgen")) {
+        if ([string]::IsNullOrWhiteSpace("$($shimManifest.toolchain.$toolField)")) {
+            Fail "$r : shim manifest is missing its recorded $toolField toolchain version"
+        }
+    }
+
     Assert-Format $binaryPath $r
-    Write-Output "OK $r : inventory + hash + manifest + format/arch verified ($binaryHash)"
+    Assert-Format $shimBinaryPath $r
+    Write-Output "OK $r : inventory + hashes + manifests + format/arch verified (official $binaryHash, shim $shimHash)"
 }
 
 Write-Output "Staging verification passed for: $($rids -join ', ')"

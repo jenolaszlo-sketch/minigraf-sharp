@@ -128,10 +128,26 @@ internal static class Program
         }
     }
 
+    private static string HostRid()
+    {
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) { return "win-x64"; }
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX)) { return "osx-arm64"; }
+        return "linux-x64";
+    }
+
+    private static string NativeFileName(string libraryName)
+    {
+        string baseName = libraryName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            ? libraryName[..^4]
+            : libraryName;
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) { return baseName + ".dll"; }
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX)) { return "lib" + baseName + ".dylib"; }
+        return "lib" + baseName + ".so";
+    }
+
     private static IntPtr TryResolveHarnessNative(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
     {
-        var fileName = libraryName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? libraryName : libraryName + ".dll";
-        var candidate = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", fileName);
+        var candidate = Path.Combine(AppContext.BaseDirectory, "runtimes", HostRid(), "native", NativeFileName(libraryName));
         if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out var loaded))
         {
             return loaded;
@@ -290,7 +306,7 @@ internal static class Program
     {
         Console.WriteLine("shim qualification target:");
         Console.WriteLine("  identity sources: native/shim/identity.json + native/upstream.json (byte-exact assert follows)");
-        Console.WriteLine("  load path: runtimes/win-x64/native/minigrafsharp_shim.dll; official minigraf.dll co-staged for gate + handoff cases");
+        Console.WriteLine("  load path: runtimes/" + HostRid() + "/native/" + NativeFileName("minigrafsharp_shim.dll") + "; official " + NativeFileName("minigraf.dll") + " co-staged for gate + handoff cases");
     }
 
     private static void IdentityTokenByteExact()
@@ -315,8 +331,8 @@ internal static class Program
 
     private static void OfficialBinaryNegativeGate()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", "minigraf.dll");
-        Check(File.Exists(path), "official minigraf.dll not staged for probe");
+        var path = Path.Combine(AppContext.BaseDirectory, "runtimes", HostRid(), "native", NativeFileName("minigraf.dll"));
+        Check(File.Exists(path), "official engine binary not staged for probe: " + path);
         var lib = NativeLibrary.Load(path);
         try
         {

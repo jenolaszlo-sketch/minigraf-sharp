@@ -91,6 +91,20 @@ function Get-ArchiveHashes([string]$archivePath) {
     finally { $archive.Dispose() }
 }
 
+function Get-PackageEntrySha256([string]$archivePath, [string]$entryName) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+    try {
+        $entry = $archive.Entries | Where-Object { $_.FullName -eq $entryName } | Select-Object -First 1
+        if ($null -eq $entry) { Fail "package is missing $entryName" }
+        $stream = $entry.Open()
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try { return ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace "-", "") }
+        finally { $sha.Dispose(); $stream.Dispose() }
+    }
+    finally { $archive.Dispose() }
+}
+
 if (($Aot -or $Trim) -and -not $Rid) { Fail "-Rid is required with -Aot or -Trim" }
 if (-not $Aot -and -not $Trim -and $Rid) { Fail "-Rid is only used with -Aot or -Trim" }
 if (($Aot -or $Trim) -and $UsePublicFeed) { Fail "-Aot/-Trim consume the selected local candidate; omit -UsePublicFeed" }
@@ -105,13 +119,18 @@ $upstream = Get-Content -LiteralPath (Join-Path $repoRoot "native/upstream.json"
 $hostRid = Get-HostRid
 $nativeName = $upstream.assets."$hostRid".binary
 $expectedNativeSha = $upstream.assets."$hostRid".binary_sha256.ToUpperInvariant()
+$shimName = $upstream.shim.assets."$hostRid".binary
+# The shim is built per RID and is not byte-reproducible across environments;
+# chain of custody is package entry -> deployment. The engine is an upstream
+# release artifact and keeps its pinned hash.
 
 $previousPackages = $env:NUGET_PACKAGES
 $previousNativePath = $env:MINIGRAFSHARP_NATIVE_PATH
+$previousShimPath = $env:MINIGRAFSHARP_SHIM_NATIVE_PATH
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("minigrafsharp-consumer-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $work | Out-Null
 
-$markers = @("override=absent", "Alice", "raw=True", "uni=True", "Bob")
+$markers = @("override=absent", "Alice", "raw=True", "uni=True", "prepared=True", "Bob")
 
 $program = @'
 using MinigrafSharp;
@@ -134,6 +153,16 @@ using (var um = MinigrafDatabase.OpenMemory())
     um.Execute($"""(transact [[:u :v "{Uni}"]])""");
     var uq = (MinigrafQueryResult)um.Execute("(query [:find ?v :where [:u :v ?v]])");
     Console.WriteLine("uni=" + (uq.Rows[0]["?v"].GetString() == Uni));
+}
+
+// Prepared-query path over the owned shim, loaded through the same
+// package-deployed runtimes/<rid>/native/ layout as the engine.
+using (var pd = MinigrafPreparedDatabase.OpenMemory())
+{
+    pd.Execute("""(transact [[:alice :name "Alice"]])""");
+    var pq = pd.Prepare("""(query [:find ?name :where [?e :name ?name]])""");
+    var pqr = (MinigrafQueryResult)pq.Execute(new Dictionary<string, MinigrafBindValue>());
+    Console.WriteLine("prepared=" + (pqr.Rows[0]["?name"].GetString() == "Alice"));
 }
 
 string db = Path.Combine(Path.GetTempPath(), "minigrafsharp-consumer-" + Guid.NewGuid().ToString("N") + ".graph");
@@ -176,6 +205,7 @@ $csprojText = @"
 
 try {
     Remove-Item Env:\MINIGRAFSHARP_NATIVE_PATH -ErrorAction SilentlyContinue
+    Remove-Item Env:\MINIGRAFSHARP_SHIM_NATIVE_PATH -ErrorAction SilentlyContinue
 
     $csproj = Join-Path $work "Consumer.csproj"
     [System.IO.File]::WriteAllText($csproj, $csprojText)
@@ -242,13 +272,18 @@ $mapping
     finally { Pop-Location }
 
     $outDir = Join-Path $work "bin/Release/$TargetFramework"
-    $deployed = Join-Path $outDir ("runtimes/$hostRid/native/" + $nativeName)
-    if (-not (Test-Path -LiteralPath $deployed)) { $deployed = Join-Path $outDir $nativeName }
-    if (-not (Test-Path -LiteralPath $deployed)) { Fail "native asset not deployed from package" }
-    if ((Get-FileHash -LiteralPath $deployed -Algorithm SHA256).Hash.ToUpperInvariant() -ne $expectedNativeSha) {
-        Fail "deployed native SHA-256 does not match pinned metadata"
+    $expectedShimSha = Get-PackageEntrySha256 $Package "runtimes/$hostRid/native/$shimName"
+    foreach ($deployedTarget in @(
+            @{ Name = $nativeName; Sha = $expectedNativeSha; Label = "engine" },
+            @{ Name = $shimName; Sha = $expectedShimSha; Label = "shim" })) {
+        $deployed = Join-Path $outDir ("runtimes/$hostRid/native/" + $deployedTarget.Name)
+        if (-not (Test-Path -LiteralPath $deployed)) { $deployed = Join-Path $outDir $deployedTarget.Name }
+        if (-not (Test-Path -LiteralPath $deployed)) { Fail "$($deployedTarget.Label) native asset not deployed from package" }
+        if ((Get-FileHash -LiteralPath $deployed -Algorithm SHA256).Hash.ToUpperInvariant() -ne $deployedTarget.Sha) {
+            Fail "deployed $($deployedTarget.Label) SHA-256 does not match pinned metadata"
+        }
     }
-    Write-Output "Deployed native asset matches pinned metadata ($nativeName)."
+    Write-Output "Deployed native assets verified (engine vs pinned metadata, shim vs packaged entry: $nativeName, $shimName)."
 
     if (-not $SkipHardening -and -not $Aot -and -not $Trim) {
         $exe = (Get-ChildItem -Path $outDir -Filter "Consumer*" | Where-Object { $_.Extension -in @(".exe", "") } | Select-Object -First 1).FullName
@@ -324,6 +359,43 @@ $mapping
             if ($null -eq $prevOverride) { Remove-Item Env:\MINIGRAFSHARP_NATIVE_PATH -ErrorAction SilentlyContinue }
             else { $env:MINIGRAFSHARP_NATIVE_PATH = $prevOverride }
         }
+
+        # Shim override matrix (MINIGRAFSHARP_SHIM_NATIVE_PATH): the prepared
+        # path must fail closed with no fallback in every corruption mode.
+        $prevShimOverride = $env:MINIGRAFSHARP_SHIM_NATIVE_PATH
+        try {
+            $env:MINIGRAFSHARP_SHIM_NATIVE_PATH = Join-Path $work "nope-shim.abi"
+            $shMissing = Invoke-Native $exe @()
+            if ($shMissing.ExitCode -eq 0 -or $shMissing.Text -notmatch "MinigrafNativeLoadException") { Fail "shim override missing did not fail closed :: $($shMissing.Text)" }
+            Write-Output "OK shim override missing fails closed (no fallthrough)."
+
+            $corruptShimFile = Join-Path $work "corrupt-shim.bin"
+            [System.IO.File]::WriteAllBytes($corruptShimFile, (New-Object byte[] 4096))
+            $env:MINIGRAFSHARP_SHIM_NATIVE_PATH = $corruptShimFile
+            $shCorrupt = Invoke-Native $exe @()
+            if ($shCorrupt.ExitCode -eq 0 -or $shCorrupt.Text -notmatch "MinigrafNativeLoadException") { Fail "shim override corrupt did not fail closed :: $($shCorrupt.Text)" }
+            Write-Output "OK shim override corrupt fails closed."
+
+            $wrongShimName = $upstream.shim.assets."$wrongRid".binary
+            $wrongShimPath = Join-Path $work "wrong-arch" ("wrong-" + $wrongShimName)
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zipShim = [System.IO.Compression.ZipFile]::OpenRead($Package)
+            try {
+                $shimEntryName = "runtimes/$wrongRid/native/$wrongShimName"
+                $shimEntry = $zipShim.Entries | Where-Object { $_.FullName -eq $shimEntryName } | Select-Object -First 1
+                if ($null -eq $shimEntry) { Fail "package is missing $shimEntryName for shim wrong-arch probe" }
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($shimEntry, $wrongShimPath, $true)
+            }
+            finally { $zipShim.Dispose() }
+            $env:MINIGRAFSHARP_SHIM_NATIVE_PATH = $wrongShimPath
+            $shWrong = Invoke-Native $exe @()
+            if ($shWrong.ExitCode -eq 0 -or $shWrong.Text -notmatch "MinigrafNativeLoadException") { Fail "shim override wrong-architecture did not fail closed :: $($shWrong.Text)" }
+            Write-Output "OK shim override wrong-architecture ($wrongRid) fails closed."
+        }
+        finally {
+            if ($null -eq $prevShimOverride) { Remove-Item Env:\MINIGRAFSHARP_SHIM_NATIVE_PATH -ErrorAction SilentlyContinue }
+            else { $env:MINIGRAFSHARP_SHIM_NATIVE_PATH = $prevShimOverride }
+        }
     }
 
     if ($Aot -or $Trim) {
@@ -349,6 +421,8 @@ finally {
     else { $env:NUGET_PACKAGES = $previousPackages }
     if ($null -eq $previousNativePath) { Remove-Item Env:\MINIGRAFSHARP_NATIVE_PATH -ErrorAction SilentlyContinue }
     else { $env:MINIGRAFSHARP_NATIVE_PATH = $previousNativePath }
+    if ($null -eq $previousShimPath) { Remove-Item Env:\MINIGRAFSHARP_SHIM_NATIVE_PATH -ErrorAction SilentlyContinue }
+    else { $env:MINIGRAFSHARP_SHIM_NATIVE_PATH = $previousShimPath }
     $resolvedWork = [System.IO.Path]::GetFullPath($work)
     $resolvedTemp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
     if (-not $resolvedWork.StartsWith($resolvedTemp, [StringComparison]::OrdinalIgnoreCase) -or

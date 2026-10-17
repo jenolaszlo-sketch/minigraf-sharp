@@ -52,12 +52,24 @@
           Condition="Exists('../../native/staging/osx-arm64/libminigraf.dylib')"
           Pack="true"
           PackagePath="runtimes/osx-arm64/native/" />
+    <None Include="../../native/staging/win-x64/minigrafsharp_shim.dll"
+          Condition="Exists('../../native/staging/win-x64/minigrafsharp_shim.dll')"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native/" />
+    <None Include="../../native/staging/linux-x64/libminigrafsharp_shim.so"
+          Condition="Exists('../../native/staging/linux-x64/libminigrafsharp_shim.so')"
+          Pack="true"
+          PackagePath="runtimes/linux-x64/native/" />
+    <None Include="../../native/staging/osx-arm64/libminigrafsharp_shim.dylib"
+          Condition="Exists('../../native/staging/osx-arm64/libminigrafsharp_shim.dylib')"
+          Pack="true"
+          PackagePath="runtimes/osx-arm64/native/" />
   </ItemGroup>
 
   <Target Name="MinigrafSharpRequireNativeAssetsForPack"
           BeforeTargets="GenerateNuspec"
           Condition="'$(MinigrafSharpEnablePack)' == 'true'">
-    <Error Condition="!Exists('../../native/staging/win-x64/minigraf.dll') Or !Exists('../../native/staging/linux-x64/libminigraf.so') Or !Exists('../../native/staging/osx-arm64/libminigraf.dylib')"
-           Text="All qualified native assets must be staged before packing: native/staging/{win-x64/minigraf.dll, linux-x64/libminigraf.so, osx-arm64/libminigraf.dylib}. Stage them with eng/Get-Native.ps1 or the CI dist job." />
+    <Error Condition="!Exists('../../native/staging/win-x64/minigraf.dll') Or !Exists('../../native/staging/linux-x64/libminigraf.so') Or !Exists('../../native/staging/osx-arm64/libminigraf.dylib') Or !Exists('../../native/staging/win-x64/minigrafsharp_shim.dll') Or !Exists('../../native/staging/linux-x64/libminigrafsharp_shim.so') Or !Exists('../../native/staging/osx-arm64/libminigrafsharp_shim.dylib')"
+           Text="All qualified native assets (official engine + owned shim per RID) must be staged before packing: native/staging/{win-x64/minigraf.dll, linux-x64/libminigraf.so, osx-arm64/libminigraf.dylib, win-x64/minigrafsharp_shim.dll, linux-x64/libminigrafsharp_shim.so, osx-arm64/libminigrafsharp_shim.dylib}. Stage them with eng/Get-Native.ps1 + eng/Build-Shim.ps1 or the CI dist job." />
   </Target>
 </Project>

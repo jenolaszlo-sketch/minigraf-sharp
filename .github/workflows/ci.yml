@@ -24,9 +24,10 @@ jobs:
       - run: dotnet restore MinigrafSharp.slnx
       - run: dotnet format MinigrafSharp.slnx --verify-no-changes --no-restore
 
-  # Per-RID distribution qualification on its own OS: stage + verify the pinned
-  # native asset, then run the real-engine suites. Staging uploads as an
-  # artifact consumed by the pack job.
+  # Per-RID distribution qualification on its own OS: stage + verify the
+  # pinned official asset, run the real-engine suites, then build + verify
+  # the owned shim for this host and run both shim harnesses. Staging
+  # (engine + shim) uploads as an artifact consumed by the pack job.
   dist:
     strategy:
       fail-fast: false
@@ -49,6 +50,9 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cbindgen (pinned, matching the provenance toolchain family)
+        run: cargo install cbindgen@0.29.4 --locked
       - name: Stage, verify and qualify ${{ matrix.rid }}
         run: ./eng/Test-Dist.ps1 -Rid ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4

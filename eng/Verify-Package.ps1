@@ -17,13 +17,21 @@
   (win-x64, linux-x64, osx-arm64). Update together with the library csproj,
   eng/Verify-NativeStaging.ps1 and docs.
 
+.PARAMETER StagingRoot
+  Staging root the package was assembled from. Each packaged shim entry is
+  hashed against the staged manifest produced by the qualification build
+  (locally-built shims are not byte-reproducible across environments; the
+  chain of custody is staged binary -> staged manifest -> package entry).
+  Defaults to native/staging.
+
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File eng/Verify-Package.ps1
 #>
 [CmdletBinding()]
 param(
     [string]$PackagePath = "",
-    [string[]]$ExpectedRids = @("win-x64", "linux-x64", "osx-arm64")
+    [string[]]$ExpectedRids = @("win-x64", "linux-x64", "osx-arm64"),
+    [string]$StagingRoot = ""
 )
 
 Set-StrictMode -Version Latest
@@ -32,6 +40,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $upstreamPath = Join-Path $repoRoot "native/upstream.json"
 $upstream = Get-Content -LiteralPath $upstreamPath -Raw | ConvertFrom-Json
+if ([string]::IsNullOrWhiteSpace($StagingRoot)) { $StagingRoot = Join-Path $repoRoot "native/staging" }
 
 if ([string]::IsNullOrWhiteSpace($PackagePath)) {
     $pkgDir = Join-Path $repoRoot "artifacts/packages"
@@ -120,6 +129,29 @@ try {
             $actual = Get-EntrySha256 $entry
             $expected = $asset.binary_sha256.ToUpperInvariant()
             Check ($actual -eq $expected) "$rid native SHA-256 matches pinned metadata"
+        }
+        $shimAsset = $upstream.shim.assets."$rid"
+        if ($null -eq $shimAsset) { Check $false "upstream shim metadata for $rid"; continue }
+        $shimEntryName = "runtimes/$rid/native/$($shimAsset.binary)"
+        Check ($names -contains $shimEntryName) "$rid shim entry present ($($shimAsset.binary))"
+        $shimManifestPath = Join-Path (Join-Path $StagingRoot $rid) "minigrafsharp-shim.json"
+        if (-not (Test-Path -LiteralPath $shimManifestPath)) {
+            Check $false "$rid staged shim manifest present for chain-of-custody ($shimManifestPath)"
+            continue
+        }
+        $shimManifest = Get-Content -LiteralPath $shimManifestPath -Raw | ConvertFrom-Json
+        $shimExpected = "$($shimManifest.binary_sha256)".ToUpperInvariant()
+        $shimStagedPath = Join-Path (Join-Path $StagingRoot $rid) $shimAsset.binary
+        if (-not (Test-Path -LiteralPath $shimStagedPath)) {
+            Check $false "$rid staged shim binary present for chain-of-custody"
+            continue
+        }
+        $shimStagedHash = (Get-FileHash -LiteralPath $shimStagedPath -Algorithm SHA256).Hash.ToUpperInvariant()
+        Check ($shimStagedHash -eq $shimExpected) "$rid staged shim matches its qualification manifest"
+        if ($names -contains $shimEntryName) {
+            $shimEntry = $zip.Entries | Where-Object { $_.FullName -eq $shimEntryName } | Select-Object -First 1
+            $shimActual = Get-EntrySha256 $shimEntry
+            Check ($shimActual -eq $shimExpected) "$rid packaged shim matches the staged qualification artifact"
         }
     }
 

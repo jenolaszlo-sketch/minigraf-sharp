@@ -83,9 +83,11 @@
                                                    }
                            },
                  "toolchain":  {
-                                   "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-                                   "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
-                                   "cbindgen":  "cbindgen 0.29.4"
+                                   "win-x64":  {
+                                                   "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+                                                   "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
+                                                   "cbindgen":  "cbindgen 0.29.4"
+                                               }
                                },
                  "header":  {
                                 "path":  "native/include/minigrafsharp_shim.h",
@@ -97,9 +99,9 @@
                                 "win-x64":  {
                                                 "rid":  "win-x64",
                                                 "binary":  "minigrafsharp_shim.dll",
-                                                "binary_sha256":  "CAC3D42DA456C25CC57FA24A4EF7C10FF187EBB79049D916770CA6D1BB3D6641",
+                                                "binary_sha256":  "B19A05E2621A8A9019A1032B600EEB21730CEACD35483DBACC2DAFFA0ED24F74",
                                                 "binary_bytes":  2232320,
-        "qualified":  true
+                                                "qualified":  true
                                             }
                             }
              }

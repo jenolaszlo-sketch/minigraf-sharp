@@ -34,6 +34,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $upstream = Get-Content -LiteralPath (Join-Path $repoRoot "native/upstream.json") -Raw | ConvertFrom-Json
 $nativeName = $upstream.assets."win-x64".binary
 $nativeEntry = "runtimes/win-x64/native/$nativeName"
+$shimName = $upstream.shim.assets."win-x64".binary
+$shimEntry = "runtimes/win-x64/native/$shimName"
 
 $failures = New-Object System.Collections.Generic.List[string]
 function Check([bool]$Condition, [string]$Name) {
@@ -105,6 +107,18 @@ try {
     Test-Rejected "rename native entry path" (New-Tampered {
             param($d)
             Move-Item -LiteralPath (Join-Path $d $nativeEntry) -Destination (Join-Path $d "runtimes/win-x64/native/renamed.dll")
+        })
+    Test-Rejected "remove shim dll" (New-Tampered { param($d) Remove-Item -LiteralPath (Join-Path $d $shimEntry) })
+    Test-Rejected "modify shim dll byte" (New-Tampered {
+            param($d)
+            $p = Join-Path $d $shimEntry
+            $bytes = [System.IO.File]::ReadAllBytes($p)
+            $bytes[1000] = $bytes[1000] -bxor 0xFF
+            [System.IO.File]::WriteAllBytes($p, $bytes)
+        })
+    Test-Rejected "replace shim dll with engine binary" (New-Tampered {
+            param($d)
+            Copy-Item -LiteralPath (Join-Path $d $nativeEntry) -Destination (Join-Path $d $shimEntry) -Force
         })
     Test-Rejected "remove managed net8 dll" (New-Tampered { param($d) Remove-Item -LiteralPath (Join-Path $d "lib/net8.0/MinigrafSharp.dll") })
     Test-Rejected "remove managed net10 dll" (New-Tampered { param($d) Remove-Item -LiteralPath (Join-Path $d "lib/net10.0/MinigrafSharp.dll") })

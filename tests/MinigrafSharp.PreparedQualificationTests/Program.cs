@@ -192,13 +192,14 @@ internal static class Program
         Console.WriteLine("  pinned identity token: " + ShimNativeLoader.PinnedIdentityToken);
         Console.WriteLine("  override variables: official=" + NativeLoader.OverrideVariable +
             " shim=" + ShimNativeLoader.OverrideVariable);
-        Console.WriteLine("  qualified scope: win-x64, net8.0 and net10.0 managed surface");
+        Console.WriteLine("  qualified scope: all packaged RIDs of this runner-OS build, net8.0 and net10.0 managed surface");
         string rid = NativeLoader.GetRuntimeIdentifier();
+        string officialName = NativeLoader.GetNativeFileName(rid);
         string officialAsset = LocateAsset(NativeLoader.GetCandidatePaths(
-            rid, NativeLoader.GetNativeFileName(rid)), "minigraf.dll");
+            rid, officialName), officialName);
         string shimAsset = LocateShimAsset(rid);
-        Check(officialAsset.EndsWith("minigraf.dll", StringComparison.OrdinalIgnoreCase), "official asset located: " + officialAsset);
-        Check(shimAsset.EndsWith("minigrafsharp_shim.dll", StringComparison.OrdinalIgnoreCase), "shim asset located: " + shimAsset);
+        Check(officialAsset.EndsWith(officialName, StringComparison.OrdinalIgnoreCase), "official asset located: " + officialAsset);
+        Check(shimAsset.EndsWith(ShimNativeLoader.GetNativeFileName(rid), StringComparison.OrdinalIgnoreCase), "shim asset located: " + shimAsset);
         Console.WriteLine("  official asset: " + officialAsset);
         Console.WriteLine("  shim asset: " + shimAsset);
     }
@@ -314,11 +315,11 @@ internal static class Program
 
     private static void IdentityRefusal()
     {
+        string rid = NativeLoader.GetRuntimeIdentifier();
+        string officialName = NativeLoader.GetNativeFileName(rid);
         string officialAsset = LocateAsset(
-            NativeLoader.GetCandidatePaths(
-                NativeLoader.GetRuntimeIdentifier(),
-                NativeLoader.GetNativeFileName(NativeLoader.GetRuntimeIdentifier())),
-            "minigraf.dll");
+            NativeLoader.GetCandidatePaths(rid, officialName),
+            officialName);
         Check(File.Exists(officialAsset), "official asset staged for refusal probe: " + officialAsset);
         string? previous = Environment.GetEnvironmentVariable(ShimNativeLoader.OverrideVariable);
         try
