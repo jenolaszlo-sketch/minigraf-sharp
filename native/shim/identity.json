@@ -1,0 +1,5 @@
+{
+  "shim_abi": "0.1.0",
+  "source_revision": 1,
+  "note": "Single source of truth for the shim identity token besides native/upstream.json (core_version/core_commit). source_revision increments whenever shim source or identity changes; a rebuild with an unchanged identity.json must compose a token-identical identity string even if the binary hash changes with the toolchain."
+}

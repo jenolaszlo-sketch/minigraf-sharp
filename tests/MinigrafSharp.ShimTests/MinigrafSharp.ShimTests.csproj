@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <!-- The shim harness needs BOTH the owned shim and the official binding -->
+  <!-- (identity gate + cross-library handoff cases). Only win-x64 is qualified. -->
+  <ItemGroup Condition="Exists('../../native/staging/win-x64/minigraf.dll')">
+    <None Include="../../native/staging/win-x64/minigraf.dll"
+          Link="runtimes/win-x64/native/minigraf.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('../../native/staging/win-x64/minigrafsharp_shim.dll')">
+    <None Include="../../native/staging/win-x64/minigrafsharp_shim.dll"
+          Link="runtimes/win-x64/native/minigrafsharp_shim.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

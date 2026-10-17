@@ -6,6 +6,7 @@
     <Project Path="tests/MinigrafSharp.Tests/MinigrafSharp.Tests.csproj" />
     <Project Path="tests/MinigrafSharp.IntegrationTests/MinigrafSharp.IntegrationTests.csproj" />
     <Project Path="tests/MinigrafSharp.QualificationTests/MinigrafSharp.QualificationTests.csproj" />
+    <Project Path="tests/MinigrafSharp.ShimTests/MinigrafSharp.ShimTests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/MinigrafSharp.QuickStart/MinigrafSharp.QuickStart.csproj" />

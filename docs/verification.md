@@ -1,4 +1,4 @@
-# Verification (M0 + M1a)
+﻿# Verification (M0 + M1a)
 
 Executed evidence only. All commands run from the repository root on the
 development machine unless noted. M0 evidence is retained below; M1a
@@ -69,7 +69,7 @@ evidence follows it.
 
 M0 follows the BiscuitSharp style: plain Exe runners with no test-framework
 dependency, executed per TFM via `dotnet run` (the repo-specific equivalent
-of `dotnet test` allowed by the milestone spec §19). `dotnet test
+of `dotnet test` allowed by the milestone spec Â§19). `dotnet test
 MinigrafSharp.slnx` exits 0 with no test-SDK projects to discover.
 
 ## Scope confirmation
@@ -85,7 +85,7 @@ minimum needed for M0 failure paths).
 # M1a evidence
 
 Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged from M0
-(`minigraf.dll` SHA-256 `C534DD26…E21BC`).
+(`minigraf.dll` SHA-256 `C534DD26â€¦E21BC`).
 
 ## Build
 
@@ -111,14 +111,14 @@ Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged from M0
 - New M1a checks (17): null datalog rejected (`ArgumentNullException`);
   disposed `ExecuteRaw` throws `ObjectDisposedException`; transact returns
   non-empty JSON with a `transacted` property (observed live shape, e.g.
-  `{"transacted":1791768479534}` — a transaction id, not `1`); query raw
-  JSON contains `Alice`; `Zürich ❄ 日本語 🙂` round-trips exactly
+  `{"transacted":1791768479534}` â€” a transaction id, not `1`); query raw
+  JSON contains `Alice`; `ZÃ¼rich â„ æ—¥æœ¬èªž ðŸ™‚` round-trips exactly
   (asserted on `JsonDocument`-decoded values, robust to JSON escaping);
   malformed Datalog throws `MinigrafExecutionException` with a non-empty
   native diagnostic; 50 repeated failures all diagnosed; valid call
   succeeds after failures; 20 alternating invalid/valid rounds keep the
   handle usable; 1000 mixed transact/query calls succeed (owned-string
-  free on every success path); error-capture race of 8×120 alternating
+  free on every success path); error-capture race of 8Ã—120 alternating
   valid/invalid on one handle: 480/480 valid succeed, 480/480 failures
   diagnosed, 0 empty diagnostics, 0 unexpected outcomes.
 
@@ -147,15 +147,15 @@ transactions, options, async.
 # M1b evidence
 
 Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged
-(`minigraf.dll` SHA-256 `C534DD26…E21BC`). Native interop untouched
+(`minigraf.dll` SHA-256 `C534DD26â€¦E21BC`). Native interop untouched
 (`git diff` on `Interop/NativeMethods.cs`, `Native/`, `NativeUtf8.cs` is
 empty for M1b); `Execute()` is `ExecuteRaw()` plus managed decoding.
 
 Upstream representations verified against pinned v2.0.5 sources before
 coding: `TxId = u64` (`src/graph/types.rs`), `Value::Integer(i64)` /
 `Float(f64)` / `Boolean(bool)`, C serialization in `minigraf-c/src/lib.rs`
-(`{"transacted":…}`, `{"retracted":…}`, `{"ok":true}`,
-`{"variables":…,"results":…}`, Ref/Keyword→string, non-finite float→null).
+(`{"transacted":â€¦}`, `{"retracted":â€¦}`, `{"ok":true}`,
+`{"variables":â€¦,"results":â€¦}`, Ref/Keywordâ†’string, non-finite floatâ†’null).
 
 ## Build
 
@@ -171,8 +171,8 @@ coding: `TxId = u64` (`src/graph/types.rs`), `Value::Integer(i64)` /
 - 29 retained M0/M1a checks (surface test now pins 14 types, adds
   `MinigrafResultException` + 8 model types) plus 39 new: transacted /
   retracted / ok / extra-field tolerance; query shape + positional/named
-  cells; 9-scalar row (string, −5, 0, 42, 3.14, true, false, null,
-  `ü❄` escapes); kind-sensitive equality; 5 wrong-kind accessor throws;
+  cells; 9-scalar row (string, âˆ’5, 0, 42, 3.14, true, false, null,
+  `Ã¼â„` escapes); kind-sensitive equality; 5 wrong-kind accessor throws;
   TryGetValue hit/miss, `KeyNotFoundException`, `ArgumentOutOfRangeException`,
   null-variable rejection; `ReadOnlyCollection` immutability; 27/27
   malformed shapes rejected (`MinigrafResultException`), including
@@ -186,13 +186,13 @@ coding: `TxId = u64` (`src/graph/types.rs`), `Value::Integer(i64)` /
 
 - net8.0: 46/46 PASS, exit 0.
 - net10.0: 46/46 PASS, exit 0.
-- 27 retained checks plus 19 new: transact→`MinigrafTransactionResult`;
-  query rows with `Kind`/`GetString`; engine integer 30, −7, float 4.5,
+- 27 retained checks plus 19 new: transactâ†’`MinigrafTransactionResult`;
+  query rows with `Kind`/`GetString`; engine integer 30, âˆ’7, float 4.5,
   true/false all exact; `nil` transacts and decodes to `Null` (engine
-  supports the literal); retract→`MinigrafRetractionResult` and the fact
-  leaves the current view; rule definition→`MinigrafOkResult.Instance`;
+  supports the literal); retractâ†’`MinigrafRetractionResult` and the fact
+  leaves the current view; rule definitionâ†’`MinigrafOkResult.Instance`;
   two-variable row positional/named agreement, miss vs `KeyNotFound`;
-  `Zürich ❄ 日本語 🙂` through `Execute()`; null/disposed/malformed
+  `ZÃ¼rich â„ æ—¥æœ¬èªž ðŸ™‚` through `Execute()`; null/disposed/malformed
   boundaries preserved distinctly (malformed Datalog is
   `MinigrafExecutionException`, never `MinigrafResultException`).
 
@@ -223,7 +223,7 @@ as inherited C-boundary limits.
 Same machine, RID `win-x64`, SDK 10.0.401, staged asset unchanged.
 Native additions limited to `minigraf_open` and `minigraf_checkpoint`
 (no existing signature touched); checkpoint contract verified from pinned
-`minigraf-c/src/lib.rs` (0 = success and clears error, −1 = error with
+`minigraf-c/src/lib.rs` (0 = success and clears error, âˆ’1 = error with
 retrievable text; open failure yields no handle and therefore no native
 diagnostic).
 
@@ -252,11 +252,11 @@ diagnostic).
   removed). New persistence checks, each in an isolated temp directory
   with cleanup that surfaces locked-file failures: new-file creation
   (files observed beside the path: `new.db`); file-backed `Execute` and
-  `ExecuteRaw`; write→checkpoint→close→reopen→read; close without
+  `ExecuteRaw`; writeâ†’checkpointâ†’closeâ†’reopenâ†’read; close without
   checkpoint still persists via WAL replay on open (observed normal-close
   behavior, no crash guarantee claimed); mid-session checkpoint plus
   post-reopen read; two reopen cycles accumulating A then A+B; empty
-  database reopen with empty results; `minigraf-Žluťoučký-日本語.db`
+  database reopen with empty results; `minigraf-Å½luÅ¥ouÄkÃ½-æ—¥æœ¬èªž.db`
   path round-trip; missing parent and directory-as-path both fail with
   `MinigrafOpenException`; second open of an open file is rejected
   (first handle stays usable; no wrapper path lock added);
@@ -316,8 +316,8 @@ Probes and observed results (`win-x64`):
 
 - Gate: Minigraf/minigraf-c are exactly `2.0.5` (read from
   `native/upstream.json`).
-- Q1 same-tx multi-values (#371): same tx → 1 visible, split tx → 2,
-  checkpoint+reopen → 2 (rebuild restores). Asserted `1 -> 2`.
+- Q1 same-tx multi-values (#371): same tx â†’ 1 visible, split tx â†’ 2,
+  checkpoint+reopen â†’ 2 (rebuild restores). Asserted `1 -> 2`.
 - Q2 retract then re-assert: Datalog keeps the fact; the core
   `WriteTransaction` issue is not reachable through minigraf-c.
 - Q3 valid-time overlap (#435): both windows visible; stable across
@@ -333,17 +333,17 @@ Probes and observed results (`win-x64`):
   removed by close-time checkpoint on dispose.
 - Recursion: derives transitively (2 rows); rules are session-local
   (0 rows without re-register, 2 after re-declaring).
-- Q8: 100 bytes of a valid 24576-byte file → `MinigrafOpenException`
+- Q8: 100 bytes of a valid 24576-byte file â†’ `MinigrafOpenException`
   (never a silent empty DB); all-zero 100-byte and zero-length files open
   as new empty databases.
-- Q9: half-truncated WAL → opens; checkpointed generation visible,
+- Q9: half-truncated WAL â†’ opens; checkpointed generation visible,
   uncheckpointed entry lost.
 - Q5 old-graph + newer-WAL (#535): accepted; newer WAL replays over the
   restored graph. Fixture manifest (name/size/SHA-256) logged.
 - Q7 abrupt exit after returned write: 5/5 recovered.
 - Q4 abrupt exit during write/checkpoint loop: 5/5 reopen cleanly, prior
   data survives, post-kill checkpoint never shrinks the fact set; kills
-  landed 78–279 iterations into the loop. No exact in-checkpoint crash
+  landed 78â€“279 iterations into the loop. No exact in-checkpoint crash
   point is claimed.
 
 ## Regression status
@@ -371,7 +371,7 @@ changed.
 
 RID `win-x64`, SDK 10.0.401, engine Minigraf `2.0.5` / minigraf-c `2.0.5`.
 Package `MinigrafSharp 0.1.0-preview.1`, built from the same staged
-`minigraf.dll` (SHA-256 `C534DD26…E21BC`) that qualification used.
+`minigraf.dll` (SHA-256 `C534DD26â€¦E21BC`) that qualification used.
 `src/` code changed: none. The only `src/` change is packaging metadata in
 `MinigrafSharp.csproj` (PackageId/Version/metadata, opt-in `IsPackable`,
 native `<None>` pack items, and a pack-time asset-requirement target). No
@@ -381,7 +381,7 @@ types.
 ## Package
 
 - Built: `dotnet pack src/MinigrafSharp/MinigrafSharp.csproj -c Release
-  -p:MinigrafSharpEnablePack=true -o artifacts/packages` →
+  -p:MinigrafSharpEnablePack=true -o artifacts/packages` â†’
   `artifacts/packages/MinigrafSharp.0.1.0-preview.1.nupkg` (910,573 bytes).
 - Contents: `lib/net8.0|net10.0/MinigrafSharp.dll` (+ xml),
   `runtimes/win-x64/native/minigraf.dll`, `LICENSE`, `NOTICE`, `README.md`,
@@ -391,17 +391,17 @@ types.
 
 ## Package verifier
 
-`eng/Verify-Package.ps1` → PACKAGE VERIFICATION PASSED (exit 0). Checks
+`eng/Verify-Package.ps1` â†’ PACKAGE VERIFICATION PASSED (exit 0). Checks
 TFMs, RID set, native SHA-256 vs `native/upstream.json`, identity, legal
 files, dependency-free, and forbidden payload.
 
 Tamper proof: a copy of the package with one byte flipped in the packaged
 `minigraf.dll` fails with exactly `win-x64 native SHA-256 matches pinned
-metadata` → verifier exit 1, all other checks still passing.
+metadata` â†’ verifier exit 1, all other checks still passing.
 
 ## Clean consumer (`eng/Test-PackageConsumer.ps1`)
 
-- net8.0 and net10.0: PASS — install from local feed, build, deployed
+- net8.0 and net10.0: PASS â€” install from local feed, build, deployed
   native hash matches pinned metadata, `override=absent` at runtime, and
   in-memory + file-backed (checkpoint/reopen) output `Alice`/`Bob`.
 - Negative: with the deployed native asset removed, the consumer exits
@@ -414,13 +414,13 @@ metadata` → verifier exit 1, all other checks still passing.
 ## NativeAOT (`eng/Test-AotConsumer.ps1`)
 
 - win-x64 / net10.0 (`samples/MinigrafSharp.AotSmoke` copied outside the
-  repo): PASS — publish succeeded, 0 trim/AOT analysis warnings, native
+  repo): PASS â€” publish succeeded, 0 trim/AOT analysis warnings, native
   asset deployed beside the executable, execution output `override=absent`
   + `Alice`.
 
 ## Trimming (`eng/Test-TrimmedConsumer.ps1`)
 
-- win-x64 / net10.0: PASS — publish succeeded, 0 trim-analysis warnings,
+- win-x64 / net10.0: PASS â€” publish succeeded, 0 trim-analysis warnings,
   native asset deployed, execution output `override=absent` + `Alice`.
 
 ## Wrong-architecture diagnostic
@@ -428,7 +428,7 @@ metadata` → verifier exit 1, all other checks still passing.
 Loading the pinned Linux `libminigraf.so` under the Windows filename via
 `MINIGRAFSHARP_NATIVE_PATH` fails with `MinigrafNativeLoadException`
 (RID, architecture, filename, probed locations) wrapping
-`BadImageFormatException` — no crash, no fallback.
+`BadImageFormatException` â€” no crash, no fallback.
 
 ## Regression at M2
 
@@ -487,7 +487,7 @@ still pins the same 15 types; API inventory 46 members, sha256
 
 - Unit runner (net8/net10): hostile corpus 34/34 rejected; edge corpus
   predictable (no unexpected exception types); bounded fuzz 500 inputs, 0
-  unexpected; large 1×5000 and 5×500 and 250k-string decode; 9 UTF-8 helper
+  unexpected; large 1Ã—5000 and 5Ã—500 and 250k-string decode; 9 UTF-8 helper
   negative/positive checks; result-privacy sentinel absent from
   `MinigrafResultException`.
 - Integration runner (net8/net10): loader matrix 6/6 fail closed;
@@ -586,7 +586,7 @@ Minigraf `2.0.7` / minigraf-c `2.0.7`; staged asset
 
 ## Pin refresh (exact identity)
 
-- `native/upstream.json`: both pins at `2.0.7` — engine commit
+- `native/upstream.json`: both pins at `2.0.7` â€” engine commit
   `2d2e5d75f28e91d61be9f293de895e2271e62a29`, minigraf-c commit
   `4b598c043777be51163d3a1f309e7398d060da5d`; header re-sourced from the
   upstream v2.0.7 raw URL, SHA-256
@@ -594,14 +594,14 @@ Minigraf `2.0.7` / minigraf-c `2.0.7`; staged asset
   hash-identical to the archived v2.0.5 header (C ABI unchanged; recorded
   side by side in the header note).
 - Asset digests recorded for five RIDs, all `qualified:false` at first:
-  win-x64 `5FB9B8C8…`, linux-x64 `F7B63251…`, linux-arm64 `4B8BFBC5…`,
-  osx-x64/osx-arm64 `2BD4F21D…` (universal2 asset).
+  win-x64 `5FB9B8C8â€¦`, linux-x64 `F7B63251â€¦`, linux-arm64 `4B8BFBC5â€¦`,
+  osx-x64/osx-arm64 `2BD4F21Dâ€¦` (universal2 asset).
 - `eng/Get-Native.ps1` re-staged `win-x64`, `linux-x64`, `osx-arm64`
   (downloaded release archives hash-matched); each staging directory
   carries a freshly written `minigrafsharp-native.json` manifest.
 - `eng/Verify-NativeStaging.ps1`: PASS (exit 0) for `linux-x64`
   (`F7B63251ED87FCBEC181CF1C0CC5DF1207DC7F74DCF24FB5556FE39B8659ED99`),
-  `osx-arm64` (`2BD4F21D…16` abbreviated:
+  `osx-arm64` (`2BD4F21Dâ€¦16` abbreviated:
   `2BD4F21D6DDEB7EA8F19CDF9FB6467CFB4683E4EE7D0DCF2E9232A6F47B0E6C6`),
   `win-x64` (`5FB9B8C8A0B4B7D2C37C951A36DEBF45E39D887894ADA1F753630834D390B607`).
 
@@ -609,7 +609,7 @@ Minigraf `2.0.7` / minigraf-c `2.0.7`; staged asset
 
 - `src/MinigrafSharp/Native/NativeLoader.cs`: `PinnedMinigrafVersion` /
   `PinnedMinigrafCVersion` = `2.0.7`; `PinnedMinigrafCommit` =
-  `2d2e5d75…6229`; `PinnedMinigrafCCommit` = `4b598c04…5da5d`.
+  `2d2e5d75â€¦6229`; `PinnedMinigrafCCommit` = `4b598c04â€¦5da5d`.
 - `src/MinigrafSharp/MinigrafDatabase.cs`: both open-failure messages now
   cite "minigraf-c v2.0.7 exposes no error handle for failed opens".
 - `src/MinigrafSharp/Interop/NativeMethods.cs`: header scope comment cites
@@ -620,7 +620,7 @@ Minigraf `2.0.7` / minigraf-c `2.0.7`; staged asset
   cites the four shapes emitted by minigraf-c v2.0.7.
 - No other `.cs` file changed. Public API inventory unchanged (46 members,
   sha256 `7D299F8EB11A1EDA218BA8DFA0E24033AEC824DBCE9A47CC9E4093003A7277D2`
-  — printed by the unit harness).
+  â€” printed by the unit harness).
 
 ## Qualification rerun (win-x64, v2.0.7 binaries)
 
@@ -641,7 +641,7 @@ Gates read the pins from `native/upstream.json`: "gate Minigraf 2.0.7",
 - New rerun probes (2.0.7 positive controls; details in the
   [v2-qualification.md `2.0.7 rerun` section](v2-qualification.md)):
   - Q-rule (#608): keyword-entity UUID normalization verified against the
-    engine first (`(":a"→ref)`/`(":b"→ref)` queries normalize to `:a`/`:b`);
+    engine first (`(":a"â†’ref)`/`(":b"â†’ref)` queries normalize to `:a`/`:b`);
     then 10 upstream-mirror asserts passed, including the INT-022 case
     `(chain ?x :c)` (2 rows `:a,:b`), same-predicate bound+free calls
     keeping every edge, and unseeded `or`/`not` call shapes.
@@ -663,7 +663,7 @@ Gates read the pins from `native/upstream.json`: "gate Minigraf 2.0.7",
   v2.0.6 release notes, adopted by the pin bump); #603 remains not
   reachable through the official C surface (no prepared-statement API in
   minigraf-c v2.0.7), core-side fix facts recorded from the v2.0.7 source
-  (`src/query/datalog/prepared.rs` compared against v2.0.5 — delta is the
+  (`src/query/datalog/prepared.rs` compared against v2.0.5 â€” delta is the
   #603 fix), managed recheck scheduled inside M3.1.
 
 ## Documentation updates (identity lines)
@@ -682,7 +682,7 @@ Gates read the pins from `native/upstream.json`: "gate Minigraf 2.0.7",
 - `CHANGELOG.md`: maintenance-checkpoint entry under Unreleased.
 - `docs/v2-qualification.md`: appended `v2.0.7 rerun` section (append-only;
   M1d content untouched).
-- `ROADMAP.md`: intentionally NOT updated here — the file carries an
+- `ROADMAP.md`: intentionally NOT updated here â€” the file carries an
   unrelated uncommitted user edit that this checkpoint must not ride
   along with; the planned M3 sub-note is deferred to a follow-up commit.
 
@@ -691,7 +691,7 @@ Gates read the pins from `native/upstream.json`: "gate Minigraf 2.0.7",
 - `win-x64`: qualified on the v2.0.7 binaries by this rerun (marked
   `qualified:true` in `native/upstream.json` after the green rerun).
 - `linux-x64`, `osx-arm64`: previously CI-qualified on the v2.0.5
-  binaries; the v2.0.7 rerun has NOT executed on their platforms yet —
+  binaries; the v2.0.7 rerun has NOT executed on their platforms yet â€”
   recorded pending, never passed.
 - `linux-arm64`, `osx-x64`: unqualified (unchanged; assets hash-recorded).
 
@@ -701,7 +701,7 @@ All destructive qualification fixtures run under a guarded temp root and
 are deleted by each probe's `finally` block; every run this checkpoint used
 `C:\Windows\TEMP\opencode\MinigrafSharp.Qualification\` and left it empty
 after the runners exited (the harness asserts each cleanup and surfaces
-failures — no cleanup failures were reported in any run).
+failures â€” no cleanup failures were reported in any run).
 
 ## Scope confirmation (maintenance checkpoint)
 
@@ -712,3 +712,112 @@ limited to the upstream-corrected query results of #608/#610 (empty/too-few
 rows previously returned now return the upstream-correct rows; upstream
 states stored data was never affected). No Gagamba/Penghou sibling
 repository touched.
+
+# M3.1a evidence (owned prepared-query shim ABI 0.1.0, win-x64)
+
+Baseline `4447033` (the 2.0.7 pin-refresh checkpoint). RID `win-x64`, same
+local host as the preceding checkpoint (Windows 11
+`Microsoft Windows NT 10.0.26200.0`, Intel(R) Core(TM) Ultra 5 125H), SDK
+10.0.401. Executed per `docs/m3-1a-shim-abi-proposal.md` (approval basis
+ADR 0002, updated in place with an "Execution record" section below).
+Native toolchain installed this slice, versions recorded at build time:
+rustc `1.99.1 (58cf8f9c3 2026-10-13)`, cargo `1.99.1 (5f94df478
+2026-08-27)`, cbindgen `0.29.4`, MSVC Build Tools VC `14.51.36231` +
+Windows SDK 10. Managed harnesses ran under both `net8.0` and `net10.0`.
+
+## Provenance (exact)
+
+- Owned shim sources: `native/shim/` (Cargo.toml, identity.json, build.rs,
+  cbindgen.toml committed, src/lib.rs, Cargo.lock committed with 54 pinned
+  crates.io checksums; `--release --locked` enforced by `eng/Build-Shim.ps1`).
+- Core crate pin: crates.io `minigraf = "=2.0.7"`, tarball SHA-256
+  `74E6724A59FECE46F0F56C3FE16F1792B34E34FE08FDFF4C902B22696D760D68`
+  (1,443,572 bytes); contents inspected directly (prepared.rs BindValue
+  variants, db.rs prepare/execute, parser.rs lexer, types.rs TxId, error.rs
+  templates).
+- Parity reference (never copied): upstream minigraf-c v2.0.7 `src/lib.rs`
+  fetched to the scratch area as the serialization-shape fixture source,
+  SHA-256 `B14CA2F167B989309310A5052B76E30E9072A6534FD5A22A1DF52F767E8B65B9`.
+- Identity token embedded in the binary (static, NUL-terminated, measured
+  twice, pointer-stable):
+  `{"shim_abi":"0.1.0","shim_source_revision":1,"core_version":"2.0.7","core_commit":"2d2e5d75f28e91d61be9f293de895e2271e62a29"}`
+  — byte-exact against `identity.json` + `native/upstream.json` (harness
+  case 2); the identity JSON was never edited after the first build, so
+  token identity held while the binary was rebuilt (case 6 below).
+- Binary: `native/staging/win-x64/minigrafsharp_shim.dll` SHA-256
+  `CAC3D42DA456C25CC57FA24A4EF7C10FF187EBB79049D916770CA6D1BB3D6641`
+  (2,232,320 bytes); recorded in `native/upstream.json` shim block (2,232,320)
+  and staging manifest; `qualified` flipped only after the green rerun below.
+- Header: `native/include/minigrafsharp_shim.h` regenerated by cbindgen,
+  UTF-8 (validated), LF-only (enforced by the build script), SHA-256
+  `0C288ABF013CDEED2F64F99C67C3A8F0F16A67EF127FAF3980E1038F9433A9E8`
+  (2,988 bytes), identical across both builds of this slice.
+- Export table (dumpbin, 12 symbols): mgs_shim_identity, mgs_open,
+  mgs_open_in_memory, mgs_close, mgs_string_free, mgs_last_error,
+  mgs_prepared_last_error, mgs_execute, mgs_prepare,
+  mgs_prepared_slot_names, mgs_prepared_execute, mgs_prepared_query_free.
+
+## Harness run (tests/MinigrafSharp.ShimTests, 14 cases)
+
+Case-list amendment: the proposal listed 13 cases; execution added the
+official-binary positive control (official minigraf.dll executes the same
+fixture inside the same harness process, ruling out an environment-wide
+load failure masquerading as the identity gate). The proposal record
+below reflects the executed list.
+
+- `dotnet run -f net8.0`: `pass=14 fail=0`, `ALL 14 SHIM TESTS PASSED`.
+- `dotnet run -f net10.0`: `pass=14 fail=0`, `ALL 14 SHIM TESTS PASSED`.
+- `dotnet format --verify-no-changes`: exit 0 (no formatting drift).
+- `cargo test` (shim internal scanner unit tests, 7 cases): 7/7 passed.
+- Every run printed `cleanup: complete=true`; all file fixtures lived
+  under `%TEMP%\MinigrafSharp.ShimTests\<guid>\` with the under-root
+  guard; no cleanup failures.
+
+Observed engine facts that reshaped assertions (engine data never
+adjusted; fixture expectations corrected against measured behavior):
+
+1. Result JSON `variables` entries keep the upstream variable-name prefix
+   (`"?n"` for `?n`) — case 5 asserted the observed shape.
+2. Transact results carry `{"transacted": <unix-ms>}` — `TxId` is the
+   wall-clock transaction id (`tx_id_now`, core `graph/types.rs`), not a
+   small monotonic integer. In-memory fixtures needing distinct ids loop
+   over fresh databases until wall-clock separation, and the `:as-of`
+   counter-domain facts were pinned by equality against the equivalent
+   raw `:as-of N` literal forms (`TxCount(1)`/`TxCount(2)` bindings vs raw
+   `:as-of 1`/`:as-of 2`).
+3. `:valid-at` raw literals accept only ISO 8601 strings or
+   `:any-valid-time` (`[PRS-018]` observed); the `Timestamp(i64)` slot
+   substitution bypasses raw parsing, and the equality
+   Timestamp-slot(ms) == ISO-literal form was measured for
+   `9999-12-31T23:59:59Z` ⇔ `253402300799000` (`#603` literal-keep
+   territory: the prepared mixed clause kept the literal `:as-of` while
+   substituting only the `:valid-at` slot).
+4. The shim's slot-name emitter had a genuine bug found during execution
+   (string contents were not skipped: the string-skip consumed the
+   OPENING quote as the terminator). Fixed; shim sources changed after
+   the first recorded binary, so the binary hash above reflects the final
+   build while `identity.json` (and thus the identity token) was
+   unchanged — recorded as the token-not-hash policy working as designed.
+
+Observed diagnostics (behavior never parsed; presence-checked only):
+missing slot → `[INT-033] missing bind value for slot '$age'`; wrong kind
+→ `[INT-035] slot '$age' in value position requires Val, got
+AnyValidTime`; malformed bindings JSON → `invalid bindings JSON: …`;
+attribute slots and `transact`-style commands are rejected at prepare with
+diagnostics on the database handle.
+
+Cross-library invariants at the native level (sequential only):
+official-written file handed off to `mgs_open` with content check, and
+reverse; concurrent same-file open rejected in BOTH directions while the
+owning handle stayed alive, sequential reopened after close (hard
+invariants 1 and 2, native form).
+
+## Scope confirmation (M3.1a)
+
+New managed API: none (the harness is a test-only program; `NativeMethods`
+and `MinigrafDatabase` untouched). Loader integration and the
+`MINIGRAFSHARP_*` override family: untouched (resolve via test-only
+DllImport resolver inside the harness). Packaging/publish: no changes; no
+PR/pipeline changes. RIDs beyond win-x64: no shim binaries built —
+linux-x64/osx-x64/osx-arm64 remain pending, never recorded as qualified.
+No Gagamba/Penghou sibling repository touched; kept independently usable.

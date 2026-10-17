@@ -1,73 +1,106 @@
-{
-  "minigraf": {
-    "repository": "https://github.com/project-minigraf/minigraf",
-    "version": "2.0.7",
-    "tag": "v2.0.7",
-    "commit": "2d2e5d75f28e91d61be9f293de895e2271e62a29"
-  },
-  "minigraf-c": {
-    "repository": "https://github.com/project-minigraf/minigraf-c",
-    "version": "2.0.7",
-    "tag": "v2.0.7",
-    "commit": "4b598c043777be51163d3a1f309e7398d060da5d"
-  },
-  "header": {
-    "path": "native/include/minigraf.h",
-    "source": "https://raw.githubusercontent.com/project-minigraf/minigraf-c/v2.0.7/include/minigraf.h",
-    "sha256": "8603C0745EDE143BC9C231E2812E7BCDC2E9B37186CF3E99E8E8F9AE442ADE7D",
-    "bytes": 1297,
-    "note": "Canonical LF blob from the v2.0.7 tag, verified hash-identical to the archived v2.0.5 header: the C ABI is unchanged between v2.0.5 and v2.0.7. The windows zip carries the same header with CRLF line endings."
-  },
-  "assets": {
-    "win-x64": {
-      "rid": "win-x64",
-      "binary": "minigraf.dll",
-      "release_asset": "minigraf-c-v2.0.7-windows-x86_64.zip",
-      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-windows-x86_64.zip",
-      "release_sha256": "FDE5593049674B3DAF157321EE4F8FAC7D6A4326A5CA0CC708D4352452D5AA8D",
-      "binary_sha256": "5FB9B8C8A0B4B7D2C37C951A36DEBF45E39D887894ADA1F753630834D390B607",
-      "binary_bytes": 2150400,
-      "qualified": true
-    },
-    "linux-x64": {
-      "rid": "linux-x64",
-      "binary": "libminigraf.so",
-      "release_asset": "minigraf-c-v2.0.7-linux-x86_64.tar.gz",
-      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-linux-x86_64.tar.gz",
-      "release_sha256": "D6F988CFA05F23ADC25A3E6A62E288C304F92A8E8444A6592B4C6C9BCC066B98",
-      "binary_sha256": "F7B63251ED87FCBEC181CF1C0CC5DF1207DC7F74DCF24FB5556FE39B8659ED99",
-      "binary_bytes": 2823704,
-      "qualified": false
-    },
-    "linux-arm64": {
-      "rid": "linux-arm64",
-      "binary": "libminigraf.so",
-      "release_asset": "minigraf-c-v2.0.7-linux-aarch64.tar.gz",
-      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-linux-aarch64.tar.gz",
-      "release_sha256": "444B020EE6957759A29BDD7115358638ED3AF8BD5BBCE712BE1C8D4C5CA7FC40",
-      "binary_sha256": "4B8BFBC5BE34A2721F4884AD972503F44E7864E8F51E2B9ECAA4CA085AF08560",
-      "binary_bytes": 2656832,
-      "qualified": false
-    },
-    "osx-x64": {
-      "rid": "osx-x64",
-      "binary": "libminigraf.dylib",
-      "release_asset": "minigraf-c-v2.0.7-macos-universal2.tar.gz",
-      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-macos-universal2.tar.gz",
-      "release_sha256": "1D60CBB3EAA078BF32C70F19D33B2BC6112BC4E84B6BCD2929743EDBD3F88F3E",
-      "binary_sha256": "2BD4F21D6DDEB7EA8F19CDF9FB6467CFB4683E4EE7D0DCF2E9232A6F47B0E6C6",
-      "binary_bytes": 4937120,
-      "qualified": false
-    },
-    "osx-arm64": {
-      "rid": "osx-arm64",
-      "binary": "libminigraf.dylib",
-      "release_asset": "minigraf-c-v2.0.7-macos-universal2.tar.gz",
-      "url": "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-macos-universal2.tar.gz",
-      "release_sha256": "1D60CBB3EAA078BF32C70F19D33B2BC6112BC4E84B6BCD2929743EDBD3F88F3E",
-      "binary_sha256": "2BD4F21D6DDEB7EA8F19CDF9FB6467CFB4683E4EE7D0DCF2E9232A6F47B0E6C6",
-      "binary_bytes": 4937120,
-      "qualified": false
-    }
-  }
+﻿{
+    "minigraf":  {
+                     "repository":  "https://github.com/project-minigraf/minigraf",
+                     "version":  "2.0.7",
+                     "tag":  "v2.0.7",
+                     "commit":  "2d2e5d75f28e91d61be9f293de895e2271e62a29"
+                 },
+    "minigraf-c":  {
+                       "repository":  "https://github.com/project-minigraf/minigraf-c",
+                       "version":  "2.0.7",
+                       "tag":  "v2.0.7",
+                       "commit":  "4b598c043777be51163d3a1f309e7398d060da5d"
+                   },
+    "header":  {
+                   "path":  "native/include/minigraf.h",
+                   "source":  "https://raw.githubusercontent.com/project-minigraf/minigraf-c/v2.0.7/include/minigraf.h",
+                   "sha256":  "8603C0745EDE143BC9C231E2812E7BCDC2E9B37186CF3E99E8E8F9AE442ADE7D",
+                   "bytes":  1297,
+                   "note":  "Canonical LF blob from the v2.0.7 tag, verified hash-identical to the archived v2.0.5 header: the C ABI is unchanged between v2.0.5 and v2.0.7. The windows zip carries the same header with CRLF line endings."
+               },
+    "assets":  {
+                   "win-x64":  {
+                                   "rid":  "win-x64",
+                                   "binary":  "minigraf.dll",
+                                   "release_asset":  "minigraf-c-v2.0.7-windows-x86_64.zip",
+                                   "url":  "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-windows-x86_64.zip",
+                                   "release_sha256":  "FDE5593049674B3DAF157321EE4F8FAC7D6A4326A5CA0CC708D4352452D5AA8D",
+                                   "binary_sha256":  "5FB9B8C8A0B4B7D2C37C951A36DEBF45E39D887894ADA1F753630834D390B607",
+                                   "binary_bytes":  2150400,
+                                   "qualified":  true
+                               },
+                   "linux-x64":  {
+                                     "rid":  "linux-x64",
+                                     "binary":  "libminigraf.so",
+                                     "release_asset":  "minigraf-c-v2.0.7-linux-x86_64.tar.gz",
+                                     "url":  "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-linux-x86_64.tar.gz",
+                                     "release_sha256":  "D6F988CFA05F23ADC25A3E6A62E288C304F92A8E8444A6592B4C6C9BCC066B98",
+                                     "binary_sha256":  "F7B63251ED87FCBEC181CF1C0CC5DF1207DC7F74DCF24FB5556FE39B8659ED99",
+                                     "binary_bytes":  2823704,
+                                     "qualified":  false
+                                 },
+                   "linux-arm64":  {
+                                       "rid":  "linux-arm64",
+                                       "binary":  "libminigraf.so",
+                                       "release_asset":  "minigraf-c-v2.0.7-linux-aarch64.tar.gz",
+                                       "url":  "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-linux-aarch64.tar.gz",
+                                       "release_sha256":  "444B020EE6957759A29BDD7115358638ED3AF8BD5BBCE712BE1C8D4C5CA7FC40",
+                                       "binary_sha256":  "4B8BFBC5BE34A2721F4884AD972503F44E7864E8F51E2B9ECAA4CA085AF08560",
+                                       "binary_bytes":  2656832,
+                                       "qualified":  false
+                                   },
+                   "osx-x64":  {
+                                   "rid":  "osx-x64",
+                                   "binary":  "libminigraf.dylib",
+                                   "release_asset":  "minigraf-c-v2.0.7-macos-universal2.tar.gz",
+                                   "url":  "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-macos-universal2.tar.gz",
+                                   "release_sha256":  "1D60CBB3EAA078BF32C70F19D33B2BC6112BC4E84B6BCD2929743EDBD3F88F3E",
+                                   "binary_sha256":  "2BD4F21D6DDEB7EA8F19CDF9FB6467CFB4683E4EE7D0DCF2E9232A6F47B0E6C6",
+                                   "binary_bytes":  4937120,
+                                   "qualified":  false
+                               },
+                   "osx-arm64":  {
+                                     "rid":  "osx-arm64",
+                                     "binary":  "libminigraf.dylib",
+                                     "release_asset":  "minigraf-c-v2.0.7-macos-universal2.tar.gz",
+                                     "url":  "https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.7/minigraf-c-v2.0.7-macos-universal2.tar.gz",
+                                     "release_sha256":  "1D60CBB3EAA078BF32C70F19D33B2BC6112BC4E84B6BCD2929743EDBD3F88F3E",
+                                     "binary_sha256":  "2BD4F21D6DDEB7EA8F19CDF9FB6467CFB4683E4EE7D0DCF2E9232A6F47B0E6C6",
+                                     "binary_bytes":  4937120,
+                                     "qualified":  false
+                                 }
+               },
+    "shim":  {
+                 "abi":  "0.1.0",
+                 "source_revision":  1,
+                 "provenance":  "Owned shim source in native/shim (this repository); identity token composed by native/shim/build.rs from native/shim/identity.json and this file\u0027s minigraf block.",
+                 "crate":  {
+                               "name":  "minigrafsharp-shim",
+                               "pinned_minigraf":  {
+                                                       "version":  "2.0.7",
+                                                       "tarball_sha256":  "74E6724A59FECE46F0F56C3FE16F1792B34E34FE08FDFF4C902B22696D760D68",
+                                                       "tarball_bytes":  1443572
+                                                   }
+                           },
+                 "toolchain":  {
+                                   "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+                                   "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
+                                   "cbindgen":  "cbindgen 0.29.4"
+                               },
+                 "header":  {
+                                "path":  "native/include/minigrafsharp_shim.h",
+                                "source":  "generated from native/shim by cbindgen 0.29.4",
+                                "sha256":  "0C288ABF013CDEED2F64F99C67C3A8F0F16A67EF127FAF3980E1038F9433A9E8",
+                                "bytes":  2988
+                            },
+                 "assets":  {
+                                "win-x64":  {
+                                                "rid":  "win-x64",
+                                                "binary":  "minigrafsharp_shim.dll",
+                                                "binary_sha256":  "CAC3D42DA456C25CC57FA24A4EF7C10FF187EBB79049D916770CA6D1BB3D6641",
+                                                "binary_bytes":  2232320,
+        "qualified":  true
+                                            }
+                            }
+             }
 }

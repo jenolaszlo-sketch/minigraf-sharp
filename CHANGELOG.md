@@ -74,3 +74,13 @@ package and never copy the upstream Minigraf version number.
   empty or too-few rows. No public API change; managed package version
   unchanged. Identified RIDs other than `win-x64` remain not requalified and
   are never recorded as passed.
+- M3.1a native shim: owned prepared-query shim `native/shim/`
+  (Cargo `minigrafsharp-shim 0.1.0`, pin `minigraf =2.0.7` with committed
+  checksums, no upstream file copied) exposing 12 `mgs_` exports with a
+  build-composed identity token (`mgs_shim_identity`; shim ABI 0.1.0 +
+  core 2.0.7), the official result-JSON shapes, an official-binary
+  rejection gate at the identity level, and `docs/verification.md`
+  "M3.1a evidence" on `win-x64` (14/14 both TFMs). `eng/Build-Shim.ps1`
+  and `tests/MinigrafSharp.ShimTests` (net8/net10) added. No managed API
+  change, no loader/public-surface change, no package change; other RIDs
+  not built and remain unqualified.
