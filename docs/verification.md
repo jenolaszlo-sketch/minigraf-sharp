@@ -1041,3 +1041,53 @@ no Gagamba/Penghou sibling changes. Unqualified RIDs (`linux-arm64`,
 Shim provenance is `shim.assets.<rid>` records plus the per-RID
 toolchain versions in `native/upstream.json`; the runs above are the
 executed qualification for all three RIDs.
+
+# Release record (0.1.0-preview.4, M3.1 surface)
+
+Release revision: `418e9fccbbf895666e0162cd27c58c32e14b83b0` (release-prep
+commit containing the independent review
+`docs/release-review-0.1.0-preview.4.md`, the version bump to
+`0.1.0-preview.4`, and the release-pipeline corrections). The frozen
+public surface is the 19-type list checked by the public-surface closure
+test; on this revision it was independently re-checked by reflection
+against the packaged assembly (19 types, zero pointer members).
+
+- Qualification: CI run
+  https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39040557827
+  on `418e9fc`, all 11 jobs green (format, three on-OS `dist`, `pack`,
+  six `consume`).
+- Exact artifact: `MinigrafSharp.0.1.0-preview.4.nupkg`, SHA-256
+  `D1F22A7D98CC50B3711572927BCC03F236391A87A2758D210B989E4CCC875D86`
+  (the `pack` job's recorded hash and the downloaded artifact agree).
+  The artifact was downloaded from that run and verified locally
+  (`eng/Verify-Package.ps1` against the same run's per-RID staging
+  artifacts: engine pins, shim chain of custody, RID set, legal files,
+  no forbidden payload). Contents: both managed TFMs + XML docs, the
+  engine and owned shim for `win-x64`, `linux-x64`, `osx-arm64`, legal
+  files and README.
+- Publish: `publish.yml` run
+  https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39041367635
+  (workflow_dispatch at `418e9fc`) resolved and validated that exact
+  CI run, downloaded its immutable `nupkg` and the staging artifacts,
+  re-verified the package, obtained a short-lived key via GitHub OIDC
+  trusted publishing, and pushed it. Nothing was rebuilt at publish
+  time.
+- Public-feed verification: `verify-published.yml` run
+  https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39041402035
+  revalidated the same CI run and package, waited for indexing, and all
+  six clean consumers (Windows/Linux/macOS x net8.0/net10.0) passed
+  against nuget.org. nuget.org serves `0.1.0-preview.4`.
+- Tag/release: annotated tag `v0.1.0-preview.4` points at `418e9fc`.
+  The run's `finalize` job created the tag but failed to create the
+  GitHub pre-release because `gh release` requires a repository context
+  and that job has no checkout (run conclusion: `failure`; resolve and
+  all six consume jobs `success`). The pre-release was created manually
+  with the same notes, title and recorded package SHA-256. The workflow
+  now sets `GH_REPO` for that step so future releases complete
+  automatically; this fix changes no package content.
+
+## Scope notes
+
+`0.1.0-preview.3` was already published and is immutable; `0.1.0-preview.4`
+is the release of the qualified M3.1 surface, produced from the qualified
+source. `linux-arm64` and `osx-x64` remain unbuilt and unqualified.
