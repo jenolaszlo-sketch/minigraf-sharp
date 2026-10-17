@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <!-- Managed prepared-query qualification runs both the owned shim and the -->
+  <!-- official binding (identity refusal + raw-vs-prepared parity cases). -->
+  <!-- Only win-x64 is qualified here. -->
+  <ItemGroup Condition="Exists('../../native/staging/win-x64/minigraf.dll')">
+    <None Include="../../native/staging/win-x64/minigraf.dll"
+          Link="runtimes/win-x64/native/minigraf.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('../../native/staging/win-x64/minigrafsharp_shim.dll')">
+    <None Include="../../native/staging/win-x64/minigrafsharp_shim.dll"
+          Link="runtimes/win-x64/native/minigrafsharp_shim.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MinigrafSharp/MinigrafSharp.csproj" />
+  </ItemGroup>
+</Project>

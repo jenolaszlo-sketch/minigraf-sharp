@@ -110,7 +110,18 @@ $manifest = [ordered]@{
     }
     qualified = $false
 }
-$manifest | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 (Join-Path $stagingDir "minigrafsharp-shim.json")
+
+# BOM-less UTF-8 (PowerShell 5.1's Set-Content -Encoding UTF8 adds a BOM,
+# which consumers parsing the raw bytes reject).
+function Write-Utf8NoBom([string]$Path, [string]$Text)
+{
+    [System.IO.File]::WriteAllText(
+        (Resolve-Path -LiteralPath (Split-Path -Parent $Path)).Path + '\' + (Split-Path -Leaf $Path),
+        $Text,
+        [System.Text.UTF8Encoding]::new($false))
+}
+
+Write-Utf8NoBom (Join-Path $stagingDir "minigrafsharp-shim.json") ($manifest | ConvertTo-Json -Depth 5)
 
 # 6. Refresh tracked provenance (upstream.json shim block).
 $upstream.shim.header.sha256 = $headerSha
@@ -120,6 +131,6 @@ $upstream.shim.toolchain.cargo = $cargoVersion
 $upstream.shim.toolchain.cbindgen = $cbindgenVersion
 $upstream.shim.assets."win-x64".binary_sha256 = $dllSha
 $upstream.shim.assets."win-x64".binary_bytes = $dllBytes
-$upstream | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 $upstreamPath
+Write-Utf8NoBom $upstreamPath ($upstream | ConvertTo-Json -Depth 10)
 
 Write-Host "[staged] minigrafsharp_shim.dll staged; provenance refreshed (qualified flags untouched)."

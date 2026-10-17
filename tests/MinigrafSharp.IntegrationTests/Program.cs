@@ -261,8 +261,14 @@ try
         };
         psi.Environment[NativeLoader.OverrideVariable] = asset;
         using var child = Process.Start(psi)!;
-        child.WaitForExit(120_000);
-        Check(child.ExitCode == 0, "override asset loads in child process");
+        bool exited = child.WaitForExit(120_000);
+        if (!exited || child.ExitCode != 0)
+        {
+            Console.WriteLine("  child stdout: " + child.StandardOutput.ReadToEnd());
+            Console.WriteLine("  child stderr: " + child.StandardError.ReadToEnd());
+            Console.WriteLine($"  child: exited={exited} exitcode={child.ExitCode}");
+            Check(exited && child.ExitCode == 0, "override asset loads in child process");
+        }
     }
 }
 catch (Exception ex)

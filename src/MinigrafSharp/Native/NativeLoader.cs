@@ -238,17 +238,30 @@ internal static class NativeLoader
             return;
         }
 
+        // One resolver per assembly routes strictly by library name: the
+        // official library to the official loader, the owned shim to
+        // ShimNativeLoader (which verifies identity before its handle is
+        // ever returned). Unknown names stay unresolved. Neither loader
+        // ever substitutes the other (ADR 0002 hard invariant 5).
         NativeLibrary.SetDllImportResolver(
             typeof(NativeLoader).Assembly,
             static (libraryName, _, _) =>
             {
-                if (!string.Equals(libraryName, LibraryName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(libraryName, LibraryName, StringComparison.OrdinalIgnoreCase))
                 {
-                    return nint.Zero;
+                    EnsureLoaded();
+                    return _handle;
                 }
 
-                EnsureLoaded();
-                return _handle;
+                if (string.Equals(
+                        libraryName,
+                        ShimNativeLoader.LibraryName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return ShimNativeLoader.EnsureLoadedAndVerified();
+                }
+
+                return nint.Zero;
             });
         _resolverRegistered = true;
     }

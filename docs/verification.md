@@ -1,4 +1,4 @@
-﻿# Verification (M0 + M1a)
+# Verification (M0 + M1a)
 
 Executed evidence only. All commands run from the repository root on the
 development machine unless noted. M0 evidence is retained below; M1a
@@ -821,3 +821,124 @@ DllImport resolver inside the harness). Packaging/publish: no changes; no
 PR/pipeline changes. RIDs beyond win-x64: no shim binaries built —
 linux-x64/osx-x64/osx-arm64 remain pending, never recorded as qualified.
 No Gagamba/Penghou sibling repository touched; kept independently usable.
+# M3.1b evidence (managed prepared-query surface, win-x64)
+
+Baseline: M3.1a native anchor commit `480471e` (kept untouched; no native
+change was needed and none was made in this slice). RID `win-x64`, same
+local host as the preceding checkpoint (Windows 11
+`Microsoft Windows NT 10.0.26200.0`, Intel(R) Core(TM) Ultra 5 125H), SDK
+10.0.401. Target: `net8.0` and `net10.0` managed surface over the qualified
+shim ABI 0.1.0 (identity token unchanged, byte-exact, from M3.1a:
+`{"shim_abi":"0.1.0","shim_source_revision":1,"core_version":"2.0.7","core_commit":"2d2e5d75f28e91d61be9f293de895e2271e62a29"}`).
+
+## Pre-implementation fix recorded (upstream.json BOM)
+
+The M3.1a build-script rewrite had left `native/upstream.json` UTF-8
+encoded with a BOM (PowerShell 5.1 `Set-Content -Encoding UTF8`). The
+existing unit harness (`tests/MinigrafSharp.Tests`) parses that file by raw
+bytes and crashed, which surfaced on this slice's first full-suite run
+(the file had not been re-read by that harness after
+`480471e`). Fixed: BOM stripped from the tracked file and
+`eng/Build-Shim.ps1` switched to BOM-less UTF-8 writes
+(`Write-Utf8NoBom`), so the regression class cannot recur. This is a
+provenance-tooling fix, not a benchmark of any native behavior.
+
+## Managed surface
+
+Implemented per `docs/m3-1b-prepared-managed-proposal.md` (mandate of
+2026-10-17; ADR 0002 basis): `MinigrafPreparedDatabase`,
+`MinigrafPreparedQuery`, `MinigrafBindValue`/`MinigrafBindKind`;
+`ShimNativeLoader` (`MINIGRAFSHARP_SHIM_NATIVE_PATH`, positive identity
+verification before any handle is returned, failed loads never cached) with
+one combined assembly resolver routing strictly by module name (official
+`minigraf` to `NativeLoader`, `minigrafsharp_shim` to the shim loader, no
+substitution in either direction); `ShimNativeMethods` (the closed
+12-export surface); per-database gate with registration/cascade ownership;
+formal `MinigrafResultDecoder` reuse (no second decoder). No raw native
+handle is exposed publicly (harness-checked: unit surface test extended to
+assert the exact recorded public-type closure is now "M1c surface plus
+M3.1b provisional prepared-query surface" and that no
+`IntPtr`/`SafeHandle` appears in any public signature).
+
+## Harness run (tests/MinigrafSharp.PreparedQualificationTests, 26 cases)
+
+- net8.0: `pass=26 fail=0`, `ALL 26 PREPARED-QUALIFICATION TESTS PASSED`.
+- net10.0: `pass=26 fail=0`, `ALL 26 PREPARED-QUALIFICATION TESTS PASSED`.
+- `dotnet format --verify-no-changes`: exit 0.
+- `dotnet build MinigrafSharp.slnx -c Release`: 0 warnings, 0 errors.
+- cleanup line: `complete=true` on every run; all fixtures under
+  `%TEMP%\MinigrafSharp.PreparedQualificationTests\<guid>\` with the
+  under-root guard.
+
+Loader/identity findings (cases 1-3): the pinned managed token composes
+byte-exact from the staged provenance files; the official binary offered
+under `MINIGRAFSHARP_SHIM_NATIVE_PATH` is refused with
+`MinigrafNativeLoadException` naming the identity mechanism ("The loaded
+asset exposes no mgs_shim_identity export; it is not the owned
+MinigrafSharp shim"), and the same process continues normally afterward,
+demonstrating that the declared identity token - not binary content - is
+the compatibility anchor (each first-shim-load case order documented in
+the harness header comment: refusal probes run before any successful
+cached load).
+
+Observed diagnostics (presence-checked only, never parsed for behavior):
+missing slot -> `[INT-033] missing bind value for slot '$age'`; wrong
+kind -> `[INT-035] slot '$age' in value position requires Val, got
+Timestamp` and `... got AnyValidTime`; raw integer `:valid-at` literal ->
+`[PRS-018] :valid-at must be an ISO 8601 string or :any-valid-time, got
+Integer(1000000)` while the `Timestamp(i64)` slot substitution stayed
+accepted and equal to the equivalent raw ISO literal (deep-past
+`1970-01-01T00:16:40Z`, far-future `9999-12-31T23:59:59Z` =
+`253402300799000`). Engine tx ids observed as wall-clock milliseconds
+(id1=1792217819289, id2=1792217819309) with `Transaction(1)`,
+`Transaction(2)` and `Transaction(txId)` slot rows equal to the raw
+`:as-of` forms.
+
+Ownership/disposal (cases: disposal, cascade, double disposal, use-after-
+dispose, prepare failure cleanup, execution failure cleanup): explicit
+query dispose frees its native state exactly once under the parent gate;
+parent dispose cascade-closes registered open children first and rejects
+their use afterwards with `ObjectDisposedException`; both disposal orders
+and post-cascade child disposal are harmless; failed prepares and failed
+prepared executes leave the query and database fully reusable.
+
+Concurrency (cases: concurrent one-database, no-shared-gate,
+two-databases-parallel): interleaved prepared reads and raw writes on one
+database through the managed API produced correct rows with no
+corruption; holding one database's gate and operating on a second
+database succeeded (no global managed serialization gate); four parallel
+workers across two databases completed without error. Concurrency claims
+are limited to the serialized per-database gates; no stronger shim
+guarantee is claimed.
+
+Parity (case: raw-vs-prepared parity): identical fixtures through
+`MinigrafDatabase` and `MinigrafPreparedDatabase` produce byte-identical
+`ExecuteRaw` query JSON, identical decoded variables/rows/values through
+the shared decoder, and prepared-with-binding rows equal to the raw
+equivalent (`:age 30` literal). All seven binding kinds (entity, val with
+all five payload kinds, ValRef, ValKeyword, Transaction, Timestamp,
+AnyValidTime) exercised with value comparisons; extra/unknown bindings
+kept their measured ignore semantics; keyword text passes through
+unmodified (colon-prefixed text matches, mismatched keywords stay empty).
+
+File-backed (case: file reopen): transact via the shim, dispose, reopen,
+WAL replay visible to a prepared query, then the same file read by the
+official library (hard invariant 2 sequential handoff re-proven managed-
+side). M3.1a's native bidirectional concurrent-rejection evidence is cited
+for hard invariant 1; no new cross-engine concurrent case was invented
+here.
+
+## Scope confirmation (M3.1b)
+
+New public API: `MinigrafPreparedDatabase`, `MinigrafPreparedQuery`,
+`MinigrafBindValue`, `MinigrafBindKind` (provisional, ADR 0002). No
+`MinigrafDatabase` member changed; no packaging/NuGet change (shim package
+distribution is a later dispatch, recorded pending, never passed); no RID
+expansion (shim binaries for linux-x64/osx-* remain unbuilt; managed
+results on win-x64 must not be read as cross-RID qualification);
+integration harness child-probe invocation note: the child loader probe
+requires the apphost (`Environment.ProcessPath`) as the executable;
+run harnesses through the apphost binary or `dotnet run`, not
+`dotnet <dll>`, and the child stderr/stdout capture was added to the
+integration harness for future diagnostics. `ROADMAP.md` untouched. No
+Gagamba/Penghou sibling repository touched.

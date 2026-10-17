@@ -117,12 +117,16 @@ Check(
         new[]
         {
             "MinigrafSharp.MinigrafDatabase",
+            "MinigrafSharp.MinigrafBindKind",
+            "MinigrafSharp.MinigrafBindValue",
             "MinigrafSharp.MinigrafCheckpointException",
             "MinigrafSharp.MinigrafException",
             "MinigrafSharp.MinigrafExecutionException",
             "MinigrafSharp.MinigrafNativeLoadException",
             "MinigrafSharp.MinigrafOkResult",
             "MinigrafSharp.MinigrafOpenException",
+            "MinigrafSharp.MinigrafPreparedDatabase",
+            "MinigrafSharp.MinigrafPreparedQuery",
             "MinigrafSharp.MinigrafQueryResult",
             "MinigrafSharp.MinigrafResult",
             "MinigrafSharp.MinigrafResultException",
@@ -132,7 +136,7 @@ Check(
             "MinigrafSharp.MinigrafValue",
             "MinigrafSharp.MinigrafValueKind",
         }.Order()),
-    "public types are exactly the M1c surface");
+    "public types are exactly the M1c surface plus the M3.1b provisional prepared-query surface");
 Check(exported.All(t => t.Namespace == "MinigrafSharp"), "no public Interop/Native types");
 bool leaksNative = false;
 foreach (Type type in exported)

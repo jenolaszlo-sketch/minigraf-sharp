@@ -84,3 +84,17 @@ package and never copy the upstream Minigraf version number.
   and `tests/MinigrafSharp.ShimTests` (net8/net10) added. No managed API
   change, no loader/public-surface change, no package change; other RIDs
   not built and remain unqualified.
+- M3.1b managed prepared-query surface (provisional, ADR 0002): new
+  `MinigrafPreparedDatabase`/`MinigrafPreparedQuery`/`MinigrafBindValue`
+  over the owned shim, with deterministic cascade ownership, a
+  per-database gate, loader identity verification
+  (`MINIGRAFSHARP_SHIM_NATIVE_PATH`, `mgs_shim_identity` checked
+  byte-exact against the pinned provenance, official-binary refusal), and
+  result decoding through the existing `MinigrafResult` contract.
+  `win-x64`/net8+net10 qualification in
+  `tests/MinigrafSharp.PreparedQualificationTests` (26 cases) with
+  `docs/verification.md` "M3.1b evidence". Also fixed the UTF-8 BOM that
+  `eng/Build-Shim.ps1` had left in `native/upstream.json` (marginal to
+  `480471e`, caught by the unit harness). Public API is additive;
+  `MinigrafDatabase` unchanged; shim package distribution deferred
+  (pending, never passed); other RIDs unbuilt and unqualified.
