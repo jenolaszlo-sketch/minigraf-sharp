@@ -214,4 +214,12 @@ internal static partial class ShimNativeMethods
     internal static partial nint MgsOpenInMemoryWithOptions(
         string optionsJson,
         out nint errorJson);
+    // C ABI: char *mgs_prepared_last_error_json(const MgsPreparedQuery *prepared);
+    // Owned structured-error JSON or NULL when there is no error. Cleared by
+    // the next successful prepared operation; failures replace earlier ones.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "mgs_prepared_last_error_json")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial nint MgsPreparedLastErrorJson(nint prepared);
 }

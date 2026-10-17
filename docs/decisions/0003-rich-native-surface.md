@@ -341,7 +341,7 @@ new surface; publication (separate dispatch).
 Evidence: `docs/evidence/m3.2/` per slice (characterization, transactions,
 open-options, errors, values, identity, qualification, review), plus the
 existing `docs/verification.md` M3.1 regression record.
-## Proposed amendment for M3.2d ABI review (2026-10-17, not yet approved)
+## Amendment for M3.2d ABI review - accepted 2026-10-17
 
 Structured-error completion (M3.2d) inventoried every fallible owned-shim
 path (`docs/evidence/m3.2/errors.md`). All paths either already expose
@@ -382,4 +382,4 @@ Also proposed for acceptance with this amendment (no ABI impact):
 - A pure managed parser entry point (no mutable state, never throws) is
   added for defensive testing of malformed metadata.
 
-Implementation is gated on explicit approval of this amendment.
+Approved as proposed: exactly one new export (mgs_prepared_last_error_json), the strict unknown rule, the MGS registry, and the pure internal parser test entry point. ABI inventory reconciliation (2026-10-17, during M3.2d): the aggregate count had drifted by one; the true inventory is 12 (M3.1) + 7 (M3.2b) + 2 (M3.2c) + 1 (M3.2d) = **22 exports**, with no ABI content missing. The generated header is authoritative. No further approval gate applies unless implementation requires another ABI addition or a public-surface change.

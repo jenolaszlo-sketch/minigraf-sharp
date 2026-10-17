@@ -145,8 +145,18 @@ public sealed class MinigrafPreparedQuery : IDisposable
 
     private MinigrafExecutionException CapturePreparedError(nint native)
     {
-        // Borrowed pointer: copied before any other call on this query can
-        // replace it. The per-database gate keeps the pair atomic.
+        // Structured first (M3.2d): consumes/frees the owned JSON. The
+        // borrowed legacy text is only a fallback for an absent structured
+        // state, which degrades to Unknown classification.
+        Interop.NativeErrorInfo? info = Interop.NativeErrorJson.TryRead(
+            Interop.ShimNativeMethods.MgsPreparedLastErrorJson(native));
+        if (info is not null)
+        {
+            var structured = new MinigrafExecutionException(info.Value.Message);
+            structured.SetNativeError(info.Value.Category, info.Value.Code);
+            return structured;
+        }
+
         nint errorPtr = Interop.ShimNativeMethods.MgsPreparedLastError(native);
         string? message = Interop.NativeUtf8.ReadCString(errorPtr);
         if (string.IsNullOrEmpty(message))

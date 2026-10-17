@@ -123,6 +123,13 @@ void mgs_prepared_query_free(struct MgsPreparedQuery *prepared);
 char *mgs_last_error_json(const struct MgsDb *handle);
 
 /**
+ * Structured last error on a prepared-query handle (owned JSON) or NULL
+ * when there is no error. Cleared by the next successful prepared
+ * operation; failures replace earlier ones (M3.2d).
+ */
+char *mgs_prepared_last_error_json(const struct MgsPreparedQuery *prepared);
+
+/**
  * Structured last error on a transaction wrapper (owned JSON) or NULL when
  * there is no error. Remains readable after commit/rollback terminalized the
  * inner transaction, until `mgs_write_tx_free` (ADR 0003 amendment 1).

@@ -39,6 +39,28 @@ ative/shim/tests/characterization.rs, run inside
 
 ### Added
 
+- M3.2d structured-error completion (ADR 0003 accepted amendment): one
+  new export `mgs_prepared_last_error_json` (owned JSON, NULL when
+  clean, cleared on success, failures replace; total ABI inventory 22,
+  with the aggregate count drift corrected across the evidence), and
+  centralized native conversion (`core_error_parts` for every core-error
+  path; shim failures use `Shim/MGS-*`). Managed `NativeErrorJson` is now
+  a pure, defensive parser with the strict approved fallback: absent,
+  malformed, wrong-typed or unknown-category metadata yields
+  `Unknown`/null; a known category with a missing/invalid code keeps the
+  category and null code; codes are never inferred from message text and
+  are dropped when the category is unknown. DB `Execute`/`Prepare` and
+  prepared slot-name/execute failures now read structured JSON first
+  (borrowed text only as an Unknown-classification fallback); exception
+  types and messages are unchanged. `docs/error-reference.md` records the
+  MGS-001..004 registry, core mapping and unknown rule. Qualification:
+  Rust 13 unit tests (6 new) + 18 probes; new
+  `tests/MinigrafSharp.StructuredErrorQualificationTests` 19/19 on
+  net8.0/net10.0; shim 24/24, transactions 18/18, options 11/11,
+  prepared 26/26, full M3.1 matrix green; independent review performed
+  (no message parsing, no guessing, no stale errors, no buffer leaks, no
+  ABI/surface growth). Evidence in `docs/evidence/m3.2/errors.md`. No
+  publication.
 - M3.2c typed open options and structured open failures (ADR 0003
   amendment 3): new `mgs_open_with_options` /
   `mgs_open_in_memory_with_options` exports with an owned

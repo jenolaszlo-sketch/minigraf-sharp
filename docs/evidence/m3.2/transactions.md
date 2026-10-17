@@ -141,3 +141,14 @@ The downloaded staging artifacts were re-verified locally against the
 recorded pins (`eng/Verify-NativeStaging.ps1`): all three RIDs pass with
 no divergence notes. `linux-arm64`/`osx-x64` remain unqualified (no
 binaries, never recorded as passed).
+## ABI inventory correction (recorded 2026-10-17 during M3.2d)
+
+The M3.2b section above says "New exports (8)". The actual M3.2b
+addition is **7** exports (`mgs_begin_write`, `mgs_tx_execute`,
+`mgs_tx_commit`, `mgs_tx_rollback`, `mgs_write_tx_free`,
+`mgs_last_error_json`, `mgs_tx_last_error_json`), taking the inventory
+from 12 to 19. The two M3.2c options opens take it to 21, and the M3.2d
+prepared-error JSON accessor takes it to 22. No ABI content is missing;
+only the stated aggregate count was off by one. The current authoritative
+inventory is the generated header (`native/include/minigrafsharp_shim.h`)
+and the Rust export list.

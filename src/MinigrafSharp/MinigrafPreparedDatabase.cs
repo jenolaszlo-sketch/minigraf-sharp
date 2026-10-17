@@ -457,8 +457,17 @@ public sealed class MinigrafPreparedDatabase : IDisposable
     private static MinigrafExecutionException CaptureDatabaseError(
         Native.SafeMgsDatabaseHandle handle)
     {
-        // Borrowed pointer: copied before any other call on this handle can
-        // replace it. The per-database gate keeps the pair atomic.
+        // Structured first (M3.2d): consumes/frees the owned JSON. Falls back
+        // to the borrowed legacy text only if no structured state exists, so
+        // an absent/metadata failure degrades to Unknown without hiding the
+        // operation failure.
+        Interop.NativeErrorInfo? info = Interop.NativeErrorJson.TryRead(
+            Interop.ShimNativeMethods.MgsLastErrorJson(handle));
+        if (info is not null)
+        {
+            return WithNativeError(info.Value);
+        }
+
         nint errorPtr = Interop.ShimNativeMethods.MgsLastError(handle);
         if (Interop.NativeUtf8.ReadCString(errorPtr) is not { } message ||
             message.Length == 0)
@@ -471,6 +480,13 @@ public sealed class MinigrafPreparedDatabase : IDisposable
 
     private static MinigrafExecutionException CapturePreparedError(nint native)
     {
+        Interop.NativeErrorInfo? info = Interop.NativeErrorJson.TryRead(
+            Interop.ShimNativeMethods.MgsPreparedLastErrorJson(native));
+        if (info is not null)
+        {
+            return WithNativeError(info.Value);
+        }
+
         nint errorPtr = Interop.ShimNativeMethods.MgsPreparedLastError(native);
         if (Interop.NativeUtf8.ReadCString(errorPtr) is not { } message ||
             message.Length == 0)
@@ -479,5 +495,12 @@ public sealed class MinigrafPreparedDatabase : IDisposable
         }
 
         return new MinigrafExecutionException(message);
+    }
+
+    private static MinigrafExecutionException WithNativeError(Interop.NativeErrorInfo info)
+    {
+        var error = new MinigrafExecutionException(info.Message);
+        error.SetNativeError(info.Category, info.Code);
+        return error;
     }
 }

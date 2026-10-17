@@ -1,6 +1,6 @@
 # M3.2 plan (checkpoint record)
 
-Status: M3.2a executed; ADR 0003 accepted; M3.2b and M3.2c implemented and qualified; M3.2d blocked at the ABI-review gate (proposed 23rd export for prepared structured errors; see docs/evidence/m3.2/errors.md); M3.2e-g pending. Baseline is the
+Status: M3.2a executed; ADR 0003 accepted; M3.2b, M3.2c and M3.2d implemented and locally qualified (M3.2d ABI amendment approved: prepared structured-error accessor; cross-RID CI pending each slice's evidence binding); M3.2e-g pending. Baseline is the
 frozen M3.1 release: `0.1.0-preview.4`, qualified source `418e9fc`,
 post-release correction `ff5a7aa`, package SHA-256
 `D1F22A7D98CC50B3711572927BCC03F236391A87A2758D210B989E4CCC875D86`

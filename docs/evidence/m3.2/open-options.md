@@ -125,3 +125,9 @@ The downloaded staging artifacts were re-verified locally
 (`eng/Verify-NativeStaging.ps1`): all three RIDs pass with no divergence
 notes. Package inventory is unchanged; `linux-arm64`/`osx-x64` remain
 unqualified.
+## ABI inventory correction (recorded 2026-10-17 during M3.2d)
+
+The M3.2c section above says "total shim inventory 22". The correct count
+after M3.2c is **21** (12 M3.1 + 7 M3.2b + 2 M3.2c); the off-by-one was
+carried from the M3.2b evidence. With the M3.2d accessor the inventory is
+22. The generated header is authoritative.

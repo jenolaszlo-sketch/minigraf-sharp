@@ -108,13 +108,21 @@ fn store_shim_error(cell: &ErrorCell, code: &str, msg: &str) {
     set_error(cell, "Shim", code.to_string(), msg.to_string());
 }
 
-fn store_core_error(cell: &ErrorCell, e: &minigraf::MinigrafError) {
-    set_error(
-        cell,
+/// Single conversion of a core error into (category, code, message). Every
+/// core-error path (handle storage and open-failure out-parameters) uses this
+/// function; fields come from the structured native accessors, never from
+/// parsing the Display text.
+fn core_error_parts(e: &minigraf::MinigrafError) -> (&'static str, String, String) {
+    (
         category_name(e.category()),
         e.code().to_string(),
         format!("{e:#}"),
-    );
+    )
+}
+
+fn store_core_error(cell: &ErrorCell, e: &minigraf::MinigrafError) {
+    let (category, code, message) = core_error_parts(e);
+    set_error(cell, category, code, message);
 }
 
 fn clear_error(cell: &ErrorCell) {
@@ -240,7 +248,8 @@ fn write_out_error(out: *mut *mut c_char, category: &str, code: &str, message: &
 }
 
 fn write_out_core_error(out: *mut *mut c_char, e: &minigraf::MinigrafError) {
-    write_out_error(out, category_name(e.category()), e.code(), &format!("{e:#}"));
+    let (category, code, message) = core_error_parts(e);
+    write_out_error(out, category, &code, &message);
 }
 
 fn option_u64(value: &Json, key: &str) -> Result<u64, (String, String, String)> {
@@ -664,6 +673,19 @@ pub extern "C" fn mgs_last_error_json(handle: *const MgsDb) -> *mut c_char {
         return std::ptr::null_mut();
     }
     error_json(&unsafe { &*handle }.last_error)
+}
+
+/// Structured last error on a prepared-query handle (owned JSON) or NULL
+/// when there is no error. Cleared by the next successful prepared
+/// operation; failures replace earlier ones (M3.2d).
+#[unsafe(no_mangle)]
+pub extern "C" fn mgs_prepared_last_error_json(
+    prepared: *const MgsPreparedQuery,
+) -> *mut c_char {
+    if prepared.is_null() {
+        return std::ptr::null_mut();
+    }
+    error_json(&unsafe { &*prepared }.last_error)
 }
 
 /// Structured last error on a transaction wrapper (owned JSON) or NULL when
@@ -1140,7 +1162,7 @@ fn scan_slot_names(text: &str) -> Vec<String> {
 }
 #[cfg(test)]
 mod tests {
-    use super::scan_slot_names;
+    use super::*;
 
     fn owned(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
@@ -1185,5 +1207,129 @@ mod tests {
     fn number_and_symbol_swallow() {
         assert_eq!(scan_slot_names("12$foo"), owned(&["foo"]));
         assert_eq!(scan_slot_names("sym$bol"), owned(&["bol"]));
+    }
+
+    // --- M3.2d structured-error conversion and lifecycle -------------------
+
+    fn take_json(ptr: *mut c_char) -> serde_json::Value {
+        assert!(!ptr.is_null(), "expected owned error JSON");
+        let text = unsafe { std::ffi::CStr::from_ptr(ptr) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { drop(std::ffi::CString::from_raw(ptr)) };
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn core_error_conversion_uses_structured_fields() {
+        let db = Minigraf::in_memory().unwrap();
+        let err = db
+            .execute("(query [:find ?x :where [?x :a ?v]")
+            .expect_err("truncated query must fail");
+        let (category, code, message) = core_error_parts(&err);
+        assert_eq!(category, "Parser");
+        assert!(code.starts_with("PRS-"), "measured code: {code}");
+        assert!(
+            message.starts_with(&format!("[{code}]")),
+            "message preserves the diagnostic: {message}"
+        );
+    }
+
+    #[test]
+    fn shim_error_conversion_emits_closed_shape() {
+        let cell: ErrorCell = Mutex::new(None);
+        store_shim_error(&cell, "MGS-003", "invalid options");
+        let value = take_json(error_json(&cell));
+        assert_eq!(value["category"], "Shim");
+        assert_eq!(value["code"], "MGS-003");
+        assert_eq!(value["message"], "invalid options");
+    }
+
+    #[test]
+    fn stale_error_clears_on_success_and_failures_replace() {
+        let cell: ErrorCell = Mutex::new(None);
+        store_shim_error(&cell, "MGS-003", "first");
+        assert_eq!(take_json(error_json(&cell))["code"], "MGS-003");
+
+        clear_error(&cell);
+        assert!(
+            error_json(&cell).is_null(),
+            "success/clear must leave no error observable"
+        );
+
+        store_shim_error(&cell, "MGS-003", "first");
+        store_shim_error(&cell, "MGS-001", "second");
+        let value = take_json(error_json(&cell));
+        assert_eq!(value["code"], "MGS-001", "later failure replaces earlier");
+        assert_eq!(value["message"], "second");
+    }
+
+    #[test]
+    fn malformed_serialization_defense_keeps_json_valid() {
+        let cell: ErrorCell = Mutex::new(None);
+        set_error(
+            &cell,
+            "Shim",
+            "MGS-004".to_string(),
+            "bad\0text".to_string(),
+        );
+        // The JSON body escapes the NUL; the borrowed text falls back to a
+        // representable C string.
+        let value = take_json(error_json(&cell));
+        assert_eq!(value["code"], "MGS-004");
+        assert_eq!(value["message"], "bad\0text");
+    }
+
+    #[test]
+    fn failed_commit_diagnostics_survive_terminalization_native() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mgs-err-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("db.graph");
+        let cpath = std::ffi::CString::new(path.to_string_lossy().to_string()).unwrap();
+        let db = mgs_open(cpath.as_ptr());
+        assert!(!db.is_null(), "file open");
+        let wal_path = format!("{}.wal", path.display());
+        std::fs::create_dir_all(&wal_path).unwrap();
+
+        let tx = mgs_begin_write(db);
+        assert!(!tx.is_null(), "begin");
+        let datalog = std::ffi::CString::new("(transact [[:a :v 1]])").unwrap();
+        let result = mgs_tx_execute(tx, datalog.as_ptr());
+        assert!(!result.is_null(), "stage");
+        mgs_string_free(result);
+
+        assert_eq!(mgs_tx_commit(tx), -1, "commit fails with the WAL blocked");
+        let value = take_json(mgs_tx_last_error_json(tx));
+        assert_eq!(value["category"], "Internal");
+        assert!(
+            value["code"].as_str().unwrap_or("").starts_with("INT-"),
+            "measured code: {}",
+            value["code"]
+        );
+        assert_eq!(mgs_write_tx_free(tx), 0, "wrapper frees after terminalization");
+
+        std::fs::remove_dir_all(&wal_path).unwrap();
+        mgs_close(db);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn prepared_last_error_json_is_owned_and_null_when_clean() {
+        let db = mgs_open_in_memory();
+        assert!(!db.is_null(), "open");
+        let datalog = std::ffi::CString::new("(query [:find ?x :where [?x :a ?v]").unwrap();
+        let prepared = mgs_prepare(db, datalog.as_ptr());
+        assert!(prepared.is_null(), "malformed query must not prepare");
+        // The failure is on the database handle; a clean prepared handle has
+        // no error (NULL handle is also NULL, never a global channel).
+        let db_error = take_json(mgs_last_error_json(db));
+        assert_eq!(db_error["category"], "Parser");
+        assert!(mgs_prepared_last_error_json(std::ptr::null()).is_null());
+        mgs_close(db);
     }
 }
