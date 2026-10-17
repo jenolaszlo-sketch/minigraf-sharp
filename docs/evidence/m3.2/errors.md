@@ -217,7 +217,27 @@ Checked and passed:
   public type (23 types), public exception hierarchy unchanged.
 - NativeAOT safety: parser uses `JsonDocument` only (no reflection
   serialization); verification via the existing AOT consumers in CI.
-## 9. Cross-RID CI qualification
+## 9. Cross-RID CI qualification (M3.2d)
 
-To be appended after the slice commit's pipeline run (per-RID results and
-evidence-bound shim hashes).
+- Qualified source (implementation): `6e17b88`.
+- CI run https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39053109905
+  on `6e17b88` (all 11 jobs green):
+  - Rust 13 unit tests + 18 probes on each `dist` runner;
+  - structured-error harness 19/19 on net8.0 and net10.0 on win-x64,
+    linux-x64 and osx-arm64;
+  - shim 24/24, transactions 18/18, options 11/11, prepared 26/26 on
+    both TFMs per RID; packaging, verifier/tamper and NativeAOT
+    consumers green (M3.1/M3.2b/M3.2c regression intact).
+- Evidence-bound shim artifacts recorded in `native/upstream.json`
+  (`qualified: true`, rustc 1.99.1 / cbindgen 0.29.4 per RID):
+
+| RID | Shim SHA-256 | Bytes |
+| --- | --- | --- |
+| win-x64 | `2F8CDF1C89FD4CBEBCF48FAFB9A4C773136DBBCDE341D6857590558AB36FCAF0` | 2279424 |
+| linux-x64 | `E39EFCAC8CDB6C25F41D1E46DE3FF958556D292A64FFEA23FDE99C670B54A816` | 2959248 |
+| osx-arm64 | `011315B88CA30F6F807F933F28E8E4ADE099872FC5D1F2FA9D9F79234FD28017` | 2535024 |
+
+Downloaded staging artifacts were re-verified locally
+(`eng/Verify-NativeStaging.ps1`): all three RIDs pass with no divergence
+notes. ABI inventory: 22 exports; public surface: 23 types.
+`linux-arm64`/`osx-x64` remain unqualified. No publication occurred.
