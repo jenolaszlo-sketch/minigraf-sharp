@@ -117,3 +117,27 @@ write mutex; independent databases remain independent across threads.
   integrated qualification are the remaining M3.2 slices (M3.2c-f/g).
 - Cross-RID CI results are appended to this file after the slice's
   pipeline run; unqualified RIDs remain unqualified.
+## Cross-RID CI qualification (M3.2b)
+
+CI run https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39050048369
+on revision `8b87d2e` (all 11 jobs green):
+- Rust probes 18/18 on each `dist` runner (win-x64, linux-x64, osx-arm64;
+  the two new thread-local-guard probes included);
+- shim harness 20/20, prepared harness 26/26 and the new transaction
+  harness 18/18 on net8.0 and net10.0 on every RID;
+- packaging, package verifier/tamper matrix and NativeAOT consumers green
+  (M3.1 regression untouched).
+
+Evidence-bound shim artifacts recorded in `native/upstream.json`
+(`qualified: true`, per-RID toolchain rustc 1.99.1 / cbindgen 0.29.4):
+
+| RID | Shim SHA-256 | Bytes |
+| --- | --- | --- |
+| win-x64 | `1E7983CC3688AF450300986A3A2A546F865D7A864E54AB1AEE16BF76A96C8124` | 2266112 |
+| linux-x64 | `AE33F6E5D80C21760DF9F1B8EF3B66B5DA9D121503B1E08B9209EB2322F04C61` | 2949296 |
+| osx-arm64 | `7DCB478919628FF500A7829723E5A181B794FBEE701EE5D88766C5579BE71F0A` | 2517648 |
+
+The downloaded staging artifacts were re-verified locally against the
+recorded pins (`eng/Verify-NativeStaging.ps1`): all three RIDs pass with
+no divergence notes. `linux-arm64`/`osx-x64` remain unqualified (no
+binaries, never recorded as passed).
