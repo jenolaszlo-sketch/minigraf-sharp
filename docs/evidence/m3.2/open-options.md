@@ -102,3 +102,26 @@ evidence).
 CI results for the slice commit are appended to this file after the
 pipeline run, including per-RID shim hashes and the downloaded-artifact
 re-verification.
+## Cross-RID CI qualification (M3.2c)
+
+CI run https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39051498502
+on revision `90120c5` (all 11 jobs green):
+- open-options harness 11/11 on net8.0 and net10.0 on each `dist`
+  runner (win-x64, linux-x64, osx-arm64);
+- shim harness 24/24, prepared 26/26, transaction 18/18, Rust probes
+  18/18 on every RID; packaging, verifier/tamper and NativeAOT
+  consumers green (M3.1 regression untouched).
+
+Evidence-bound shim artifacts recorded in `native/upstream.json`
+(`qualified: true`, per-RID toolchain rustc 1.99.1 / cbindgen 0.29.4):
+
+| RID | Shim SHA-256 | Bytes |
+| --- | --- | --- |
+| win-x64 | `762A8F0DC13105EA7A890A73283E0B428454781976B9BB58217F31948135DA64` | 2278400 |
+| linux-x64 | `643660818CF52AFB20A36E5CA57E523E46EB2B38DB6A3F7D5E8D9BAE872E0055` | 2958896 |
+| osx-arm64 | `CF45026639B99C6742E0BE7AEE5BDF62F0BA530E33291901B06C79B9CF64BCB8` | 2534960 |
+
+The downloaded staging artifacts were re-verified locally
+(`eng/Verify-NativeStaging.ps1`): all three RIDs pass with no divergence
+notes. Package inventory is unchanged; `linux-arm64`/`osx-x64` remain
+unqualified.

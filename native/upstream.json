@@ -83,6 +83,11 @@
                                                    }
                            },
                  "toolchain":  {
+                                   "win-x64":  {
+                                                   "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+                                                   "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
+                                                   "cbindgen":  "cbindgen 0.29.4"
+                                               },
                                    "linux-x64":  {
                                                      "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
                                                      "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
@@ -92,12 +97,7 @@
                                                      "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
                                                      "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
                                                      "cbindgen":  "cbindgen 0.29.4"
-                                                 },
-                                   "win-x64":  {
-                                                   "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-                                                   "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
-                                                   "cbindgen":  "cbindgen 0.29.4"
-                                               }
+                                                 }
                                },
                  "header":  {
                                 "path":  "native/include/minigrafsharp_shim.h",
@@ -109,22 +109,22 @@
                                 "win-x64":  {
                                                 "rid":  "win-x64",
                                                 "binary":  "minigrafsharp_shim.dll",
-                                                "binary_sha256":  "8D78353E99DA551DC32383B97BBC2362BB69FF125510388471D6B1C09A417EF9",
+                                                "binary_sha256":  "762A8F0DC13105EA7A890A73283E0B428454781976B9BB58217F31948135DA64",
                                                 "binary_bytes":  2278400,
                                                 "qualified":  true
                                             },
                                 "linux-x64":  {
                                                   "rid":  "linux-x64",
                                                   "binary":  "libminigrafsharp_shim.so",
-                                                  "binary_sha256":  "AE33F6E5D80C21760DF9F1B8EF3B66B5DA9D121503B1E08B9209EB2322F04C61",
-                                                  "binary_bytes":  2949296,
+                                                  "binary_sha256":  "643660818CF52AFB20A36E5CA57E523E46EB2B38DB6A3F7D5E8D9BAE872E0055",
+                                                  "binary_bytes":  2958896,
                                                   "qualified":  true
                                               },
                                 "osx-arm64":  {
                                                   "rid":  "osx-arm64",
                                                   "binary":  "libminigrafsharp_shim.dylib",
-                                                  "binary_sha256":  "7DCB478919628FF500A7829723E5A181B794FBEE701EE5D88766C5579BE71F0A",
-                                                  "binary_bytes":  2517648,
+                                                  "binary_sha256":  "CF45026639B99C6742E0BE7AEE5BDF62F0BA530E33291901B06C79B9CF64BCB8",
+                                                  "binary_bytes":  2534960,
                                                   "qualified":  true
                                               }
                             }
