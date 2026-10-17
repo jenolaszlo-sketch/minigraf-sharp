@@ -98,3 +98,19 @@ package and never copy the upstream Minigraf version number.
   `480471e`, caught by the unit harness). Public API is additive;
   `MinigrafDatabase` unchanged; shim package distribution deferred
   (pending, never passed); other RIDs unbuilt and unqualified.
+- M3.1c shim packaging and multi-RID qualification: the owned
+  prepared-query shim now ships beside the engine in the NuGet package
+  for every packaged RID (`win-x64`, `linux-x64`, `osx-arm64`), and the
+  full qualification pipeline runs on each RID's own OS: native
+  `cargo --locked` tests, shim harness (14/14), managed prepared-query
+  harness (26/26), engine suites, staging verification, package assembly,
+  package verifier self-test, and package consumption with a prepared
+  query plus the `MINIGRAFSHARP_SHIM_NATIVE_PATH` fail-closed matrix.
+  CI run 39038565443 on revision `6b96043` is green across format, three
+  `dist` jobs, `pack`, and six `consume` jobs (net8/net10, NativeAOT on
+  net10). Evidence in `docs/verification.md` "M3.1c evidence", including
+  the qualified artifact hashes and per-RID toolchain records. Fixed
+  along the way: POSIX-only shim resolver registration, a Mach-O magic
+  comparison bug, CRLF header canonicalization, and a consumer probe
+  path/cleanup bug. No public API change since M3.1b; package RID set
+  unchanged; `linux-arm64`/`osx-x64` remain unbuilt and unqualified.

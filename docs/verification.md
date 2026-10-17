@@ -942,3 +942,102 @@ run harnesses through the apphost binary or `dotnet run`, not
 `dotnet <dll>`, and the child stderr/stdout capture was added to the
 integration harness for future diagnostics. `ROADMAP.md` untouched. No
 Gagamba/Penghou sibling repository touched.
+
+# M3.1c evidence (shim packaging and multi-RID qualification, win-x64/linux-x64/osx-arm64)
+
+Source revision: `6b9604393417db6406f07af04b0f3c97e5001f5b` (the qualified
+pipeline revision; supersedes the mechanics/fix revisions
+`01947ec`/`a8bcb48`/`859268a`/`2a91783`). CI run:
+https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39038565443
+(`ci`, conclusion `success`). Baseline for provenance: M3.1a anchor
+`480471e` and M3.1b `42a7269`, unchanged by this slice.
+
+## What was executed
+
+All eleven CI jobs passed on the source revision above: `format`; `dist`
+on `windows-latest`/`ubuntu-latest`/`macos-latest`; `pack`; and six
+`consume` jobs (Windows/Linux/macOS x net8.0/net10.0, NativeAOT on
+net10.0). Each `dist` job:
+
+1. staged and hash-verified the pinned official engine asset;
+2. ran the real-engine unit, integration and storage/recovery suites on
+   net8.0 and net10.0;
+3. built the owned shim for that host with the pinned toolchain family
+   (`cbindgen 0.29.4`, Rust stable), which includes the `cargo --locked`
+   unit tests (7/7) and the byte-exact ABI-header pin gate;
+4. verified the complete staged inventory (engine + shim + both
+   manifests) including hashes, formats and architectures;
+5. ran the shim harness (14/14) and the managed prepared-query harness
+   (26/26) on net8.0 and net10.0.
+
+The `pack` job assembled the package from the three exact `dist` staging
+artifacts, `eng/Verify-Package.ps1` verified both native entries per RID
+against the staged qualification manifests, and the verifier self-test
+(14 tamper cases, including shim removal/byte-corruption/engine-
+substitution) passed. The `consume` jobs installed the built package from
+a clean external consumer, ran the prepared-query path plus all engine
+markers, verified the deployed engine against its pinned hash and the
+deployed shim against the package entry, and re-ran the shim-override
+matrix (missing/corrupt/wrong-architecture), all fail-closed.
+
+## Qualified artifacts (evidence-bound)
+
+Package: `MinigrafSharp.0.1.0-preview.3.nupkg`, SHA-256
+`A5435392ACFD9953493C3B4362469D46FCF27D7E81669A1A9D349E9A40BC04B7`
+(recorded by the `pack` job; the downloaded artifact matches).
+
+| RID | Engine SHA-256 | Shim SHA-256 | Shim bytes |
+| --- | --- | --- | --- |
+| `win-x64` | `5FB9B8C8A0B4B7D2C37C951A36DEBF45E39D887894ADA1F753630834D390B607` | `DB9EBAACF482F84B174562AF12A363A3D6A77850E947E1DD873834C9F2682F5F` | 2232832 |
+| `linux-x64` | `F7B63251ED87FCBEC181CF1C0CC5DF1207DC7F74DCF24FB5556FE39B8659ED99` | `B8A82B10EC13D679A1065DEA06F55078E64B07D389138CD5CBF075BB68CDABA2` | 2919000 |
+| `osx-arm64` | `2BD4F21D6DDEB7EA8F19CDF9FB6467CFB4683E4EE7D0DCF2E9232A6F47B0E6C6` | `D42C47D64BFC431E911D91DDCFDFAE0DD559BDDA5C5764415DD30394BABC6C16` | 2496096 |
+
+The shim hashes are the `dist`-built artifacts (recorded in
+`native/upstream.json` `shim.assets`, `qualified: true`, with the
+per-RID Rust/cbindgen versions). Locally built shims are not
+byte-reproducible across linker timestamps/toolchains; the chain of
+custody that is verified within a run is staged binary -> staged
+qualification manifest -> package entry -> deployed file, and the recorded
+hashes identify the exact qualified artifacts.
+
+## Local (win-x64) execution
+
+On the development host, the same revision was executed locally: solution
+build clean (0 warnings), `dotnet format --verify-no-changes` clean, all
+five suites green on net8.0 and net10.0 (unit, integration,
+qualification, shim 14/14, prepared 26/26), staging verification green,
+and the packaged-consumer gate green on net8.0 and net10.0 against a
+package assembled from the CI dist artifacts (prepared marker present,
+engine/shim deployment chain verified, all six override probes fail
+closed).
+
+## Defects found and fixed in this slice
+
+1. The M3.1b managed loader registered its cached shim handle but the
+   assembly DllImport resolver was only registered by the official
+   loader path; on POSIX a shim-only process failed every P/Invoke until
+   the official path ran (Windows masked it). Fixed by registering the
+   shared resolver from the shim load path (idempotent, shim->official
+   lock ordering). This is a managed defect in the M3.1b surface, fixed
+   here; native ABI and M3.1a behavior are unchanged.
+2. `Verify-NativeStaging.ps1`'s thin Mach-O magic compare used
+   PowerShell's negative-Int32 hex literal and rejected real 64-bit
+   arm64 dylibs (latent: the engine asset is universal). Fixed with a
+   positive decimal literal; verified on the CI macOS runner.
+3. cbindgen emitted CRLF on the Windows runner; the header pipeline now
+   canonicalizes to LF before the byte-exact pin gate (pinned identity is
+   the LF blob).
+4. The consumer probe used an invalid three-argument `Join-Path` and
+   cleanup could mask the primary failure; fixed, with bounded cleanup
+   retries and an explicit `cleanup: incomplete` line instead of
+   replacing the failure.
+
+## Scope confirmation (M3.1c)
+
+Package RID set unchanged (`win-x64`, `linux-x64`, `osx-arm64`); managed
+API unchanged since M3.1b; no publishing dispatch; `ROADMAP.md` untouched;
+no Gagamba/Penghou sibling changes. Unqualified RIDs (`linux-arm64`,
+`osx-x64`) remain unbuilt and unqualified, never recorded as passed.
+Shim provenance is `shim.assets.<rid>` records plus the per-RID
+toolchain versions in `native/upstream.json`; the runs above are the
+executed qualification for all three RIDs.

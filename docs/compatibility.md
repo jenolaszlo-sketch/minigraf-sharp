@@ -19,16 +19,21 @@ that CI qualified on their own OS, so qualified = packaged.
 
 | RID | Asset source | Packaged | Qualified | NativeAOT | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `win-x64` | upstream windows x86_64 zip | yes | yes (v2.0.7: local requalification, 2026-10-17) | yes (net10.0) | lifecycle + execution + persistence + v2 qualification |
-| `linux-x64` | upstream linux x86_64 | yes | yes on v2.0.5 binaries; v2.0.7 rerun pending | yes (net10.0) | CI-qualified on `ubuntu-latest` (v2.0.5 era) |
-| `osx-arm64` | upstream macos universal2 | yes | yes on v2.0.5 binaries; v2.0.7 rerun pending | yes (net10.0) | CI-qualified on `macos-latest` (v2.0.5 era) |
+| `win-x64` | upstream windows x86_64 zip | yes | yes (v2.0.7: local requalification, 2026-10-17; CI run 39038565443) | yes (net10.0) | lifecycle + execution + persistence + v2 qualification + shim packaging |
+| `linux-x64` | upstream linux x86_64 | yes | yes (v2.0.7: CI run 39038565443, 2026-10-17) | yes (net10.0) | CI-qualified on `ubuntu-latest`; engine suites + shim harnesses + package consumption |
+| `osx-arm64` | upstream macos universal2 | yes | yes (v2.0.7: CI run 39038565443, 2026-10-17) | yes (net10.0) | CI-qualified on `macos-latest`; engine suites + shim harnesses + package consumption |
 | `linux-arm64` | upstream linux aarch64 | no | no | unqualified | deferred: no runner yet |
 | `osx-x64` | upstream macos universal2 | no | no | unqualified | deferred: universal2 asset matches, no runner yet |
 
-Every packaged asset is hash-recorded in `native/upstream.json`, staged and
-re-verified by `eng/Verify-NativeStaging.ps1`, and re-checked inside the
-package by `eng/Verify-Package.ps1`. Per-run RID/consumer/AOT results are in
-[verification.md](verification.md). See [packaging.md](packaging.md).
+Every packaged asset is hash-recorded in `native/upstream.json` (engine
+release bytes; owned shim artifacts with per-RID toolchain versions),
+staged and re-verified by `eng/Verify-NativeStaging.ps1`, and re-checked
+inside the package by `eng/Verify-Package.ps1`. The owned prepared-query
+shim ships beside the engine for every packaged RID; its per-run
+qualification (native `cargo --locked` tests, shim harness, managed
+prepared harness, package consumption) is executed on each RID's own OS.
+Per-run results are in [verification.md](verification.md). See
+[packaging.md](packaging.md).
 
 ## Upgrade rules
 
@@ -99,7 +104,8 @@ Observed on the v2.0.7 binaries; exact checks in
   valid-time window replacement (#435), overlapping window non-replacement
   (#374), old-graph/newer-WAL acceptance (#535). The "avoid" guidance above
   carries forward unchanged on v2.0.7.
-- Qualified RID for this requalification: `win-x64` via the three local
-  harnesses and the Q-rule/Q-or probes. `linux-x64`/`osx-arm64` requalify
-  when CI reruns on the v2.0.7 assets; no unqualified RID is recorded as
-  passed.
+- Qualified RID for this requalification: `win-x64` locally; all three
+  packaged RIDs requalified on v2.0.7 by CI run 39038565443 (2026-10-17,
+  `dist` + `pack` + six `consume` jobs green, including the owned shim's
+  native/managed harnesses and package consumption). No unqualified RID
+  is recorded as passed.
