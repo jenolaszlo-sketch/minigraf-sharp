@@ -221,3 +221,13 @@ Measured:
 - Cross-RID re-measurement: the probes run inside every `dist` job for
   win-x64, linux-x64 and osx-arm64; the CI run for this slice is recorded
   in the slice commit/report (M3.1a/b/c evidence conventions).
+
+## 13. Cross-RID re-measurement (CI)
+
+CI run https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39044852111
+on revision `59677f6` (all 11 jobs green):
+`test result: ok. 16 passed; 0 failed` on each `dist` runner —
+win-x64 (2026-10-17T15:29:20Z), linux-x64 (15:25:56Z) and
+osx-arm64 (15:26:33Z). The M3.1 suites, packaging, tamper matrix and
+NativeAOT consumers stayed green, so M3.2a is regression-free and the
+characterization facts above are measured on all three qualified RIDs.
