@@ -73,6 +73,14 @@ function Get-HostRid {
     return "osx-arm64"
 }
 
+# Shim artifact names follow the loader convention; the `shim.assets` record
+# is optional provenance, so the name must not depend on its presence.
+function Get-ShimBinaryName([string]$rid) {
+    if ($rid.StartsWith("win-", [StringComparison]::OrdinalIgnoreCase)) { return "minigrafsharp_shim.dll" }
+    if ($rid.StartsWith("osx-", [StringComparison]::OrdinalIgnoreCase)) { return "libminigrafsharp_shim.dylib" }
+    return "libminigrafsharp_shim.so"
+}
+
 function Get-ArchiveHashes([string]$archivePath) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
@@ -119,7 +127,7 @@ $upstream = Get-Content -LiteralPath (Join-Path $repoRoot "native/upstream.json"
 $hostRid = Get-HostRid
 $nativeName = $upstream.assets."$hostRid".binary
 $expectedNativeSha = $upstream.assets."$hostRid".binary_sha256.ToUpperInvariant()
-$shimName = $upstream.shim.assets."$hostRid".binary
+$shimName = Get-ShimBinaryName $hostRid
 # The shim is built per RID and is not byte-reproducible across environments;
 # chain of custody is package entry -> deployment. The engine is an upstream
 # release artifact and keeps its pinned hash.
@@ -376,7 +384,7 @@ $mapping
             if ($shCorrupt.ExitCode -eq 0 -or $shCorrupt.Text -notmatch "MinigrafNativeLoadException") { Fail "shim override corrupt did not fail closed :: $($shCorrupt.Text)" }
             Write-Output "OK shim override corrupt fails closed."
 
-            $wrongShimName = $upstream.shim.assets."$wrongRid".binary
+            $wrongShimName = Get-ShimBinaryName $wrongRid
             $wrongShimPath = Join-Path $work "wrong-arch" ("wrong-" + $wrongShimName)
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             $zipShim = [System.IO.Compression.ZipFile]::OpenRead($Package)

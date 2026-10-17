@@ -67,6 +67,14 @@ function Check([bool]$Condition, [string]$Name) {
     }
 }
 
+# Shim artifact names follow the loader convention; the `shim.assets` record
+# is optional provenance, so the name must not depend on its presence.
+function Get-ShimBinaryName([string]$rid) {
+    if ($rid.StartsWith("win-", [StringComparison]::OrdinalIgnoreCase)) { return "minigrafsharp_shim.dll" }
+    if ($rid.StartsWith("osx-", [StringComparison]::OrdinalIgnoreCase)) { return "libminigrafsharp_shim.dylib" }
+    return "libminigrafsharp_shim.so"
+}
+
 function Get-EntrySha256($entry) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -130,10 +138,9 @@ try {
             $expected = $asset.binary_sha256.ToUpperInvariant()
             Check ($actual -eq $expected) "$rid native SHA-256 matches pinned metadata"
         }
-        $shimAsset = $upstream.shim.assets."$rid"
-        if ($null -eq $shimAsset) { Check $false "upstream shim metadata for $rid"; continue }
-        $shimEntryName = "runtimes/$rid/native/$($shimAsset.binary)"
-        Check ($names -contains $shimEntryName) "$rid shim entry present ($($shimAsset.binary))"
+        $shimBinaryName = Get-ShimBinaryName $rid
+        $shimEntryName = "runtimes/$rid/native/$shimBinaryName"
+        Check ($names -contains $shimEntryName) "$rid shim entry present ($shimBinaryName)"
         $shimManifestPath = Join-Path (Join-Path $StagingRoot $rid) "minigrafsharp-shim.json"
         if (-not (Test-Path -LiteralPath $shimManifestPath)) {
             Check $false "$rid staged shim manifest present for chain-of-custody ($shimManifestPath)"
@@ -141,7 +148,7 @@ try {
         }
         $shimManifest = Get-Content -LiteralPath $shimManifestPath -Raw | ConvertFrom-Json
         $shimExpected = "$($shimManifest.binary_sha256)".ToUpperInvariant()
-        $shimStagedPath = Join-Path (Join-Path $StagingRoot $rid) $shimAsset.binary
+        $shimStagedPath = Join-Path (Join-Path $StagingRoot $rid) $shimBinaryName
         if (-not (Test-Path -LiteralPath $shimStagedPath)) {
             Check $false "$rid staged shim binary present for chain-of-custody"
             continue

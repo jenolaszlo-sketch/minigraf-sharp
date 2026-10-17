@@ -32,9 +32,16 @@ if ([string]::IsNullOrWhiteSpace($PackagePath)) {
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $upstream = Get-Content -LiteralPath (Join-Path $repoRoot "native/upstream.json") -Raw | ConvertFrom-Json
+# Shim artifact names follow the loader convention (the `shim.assets` record
+# is optional provenance).
+function Get-ShimBinaryName([string]$rid) {
+    if ($rid.StartsWith("win-", [StringComparison]::OrdinalIgnoreCase)) { return "minigrafsharp_shim.dll" }
+    if ($rid.StartsWith("osx-", [StringComparison]::OrdinalIgnoreCase)) { return "libminigrafsharp_shim.dylib" }
+    return "libminigrafsharp_shim.so"
+}
 $nativeName = $upstream.assets."win-x64".binary
 $nativeEntry = "runtimes/win-x64/native/$nativeName"
-$shimName = $upstream.shim.assets."win-x64".binary
+$shimName = Get-ShimBinaryName "win-x64"
 $shimEntry = "runtimes/win-x64/native/$shimName"
 
 $failures = New-Object System.Collections.Generic.List[string]

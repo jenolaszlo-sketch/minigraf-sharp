@@ -36,6 +36,15 @@ $upstream = Get-Content -LiteralPath (Join-Path $repoRoot "native/upstream.json"
 
 function Fail([string]$message) { throw "STAGING-VERIFY: $message" }
 
+# Shim artifact names follow the loader convention; the `shim.assets` entry
+# is optional provenance (present once an evidence commit records that RID's
+# qualified artifact), so the name must not depend on it.
+function Get-ShimBinaryName([string]$rid) {
+    if ($rid.StartsWith("win-", [StringComparison]::OrdinalIgnoreCase)) { return "minigrafsharp_shim.dll" }
+    if ($rid.StartsWith("osx-", [StringComparison]::OrdinalIgnoreCase)) { return "libminigrafsharp_shim.dylib" }
+    return "libminigrafsharp_shim.so"
+}
+
 $knownRids = @("win-x64", "linux-x64", "osx-arm64")
 [string[]]$rids = @(if ($Rid -ne "") { $Rid }
     else { Get-ChildItem -Directory -LiteralPath $StagingRoot -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Where-Object { $_ -in $knownRids } })
@@ -74,10 +83,9 @@ foreach ($r in $rids) {
     if ($r -notin $knownRids) { Fail "unexpected staged directory '$r'" }
     $asset = $upstream.assets."$r"
     if ($null -eq $asset) { Fail "$r : no pin in native/upstream.json" }
-    $shimAsset = $upstream.shim.assets."$r"
-    if ($null -eq $shimAsset) { Fail "$r : no shim block in native/upstream.json" }
+    $shimAsset = $upstream.shim.assets.PSObject.Properties[$r]
     $binary = $asset.binary
-    $shimBinary = $shimAsset.binary
+    $shimBinary = Get-ShimBinaryName $r
     $stage = Join-Path $StagingRoot $r
     $binaryPath = Join-Path $stage $binary
     $manifestPath = Join-Path $stage "minigrafsharp-native.json"
@@ -131,8 +139,10 @@ foreach ($r in $rids) {
     if ($shimHash -ne $manifestShimHash) {
         Fail "$r : shim binary SHA-256 $shimHash does not match its staged manifest $manifestShimHash"
     }
-    if ($shimAsset.binary_sha256 -and $shimAsset.binary_sha256.ToUpperInvariant() -ne $shimHash) {
-        Write-Output "NOTE ${r}: staged shim sha256 $shimHash differs from the recorded evidence-bound artifact $($shimAsset.binary_sha256); this is expected for a fresh build and the evidence commit records the qualified artifact."
+    $shimAssetRecord = if ($shimAsset) { $shimAsset.Value } else { $null }
+    if ($null -ne $shimAssetRecord -and $shimAssetRecord.binary_sha256 -and
+        "$($shimAssetRecord.binary_sha256)".ToUpperInvariant() -ne $shimHash) {
+        Write-Output "NOTE ${r}: staged shim sha256 $shimHash differs from the recorded evidence-bound artifact $($shimAssetRecord.binary_sha256); this is expected for a fresh build and the evidence commit records the qualified artifact."
     }
 
     $shimChecks = @(
