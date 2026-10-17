@@ -385,7 +385,9 @@ $mapping
             Write-Output "OK shim override corrupt fails closed."
 
             $wrongShimName = Get-ShimBinaryName $wrongRid
-            $wrongShimPath = Join-Path $work "wrong-arch" ("wrong-" + $wrongShimName)
+            $wrongShimDir = Join-Path $work "wrong-arch-shim"
+            New-Item -ItemType Directory -Path $wrongShimDir -Force | Out-Null
+            $wrongShimPath = Join-Path $wrongShimDir ("wrong-" + $wrongShimName)
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             $zipShim = [System.IO.Compression.ZipFile]::OpenRead($Package)
             try {
@@ -437,7 +439,23 @@ finally {
         -not ([System.IO.Path]::GetFileName($resolvedWork)).StartsWith("minigrafsharp-consumer-", [StringComparison]::Ordinal)) {
         Fail "refusing cleanup outside the consumer temporary directory"
     }
-    Remove-Item -LiteralPath $resolvedWork -Recurse -Force -ErrorAction SilentlyContinue
+    # Bounded retry: Windows can hold transient handles on just-exited
+    # consumer images. Never let cleanup mask the primary failure.
+    $cleanupError = $null
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $resolvedWork -Recurse -Force -ErrorAction Stop
+            $cleanupError = $null
+            break
+        }
+        catch {
+            $cleanupError = $_
+            Start-Sleep -Milliseconds 300
+        }
+    }
+    if ($null -ne $cleanupError) {
+        Write-Output "cleanup: incomplete :: $($cleanupError.Exception.Message)"
+    }
 }
 
 Write-Output "Packaged-consumer test passed ($TargetFramework)."
