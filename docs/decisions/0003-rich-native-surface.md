@@ -341,3 +341,45 @@ new surface; publication (separate dispatch).
 Evidence: `docs/evidence/m3.2/` per slice (characterization, transactions,
 open-options, errors, values, identity, qualification, review), plus the
 existing `docs/verification.md` M3.1 regression record.
+## Proposed amendment for M3.2d ABI review (2026-10-17, not yet approved)
+
+Structured-error completion (M3.2d) inventoried every fallible owned-shim
+path (`docs/evidence/m3.2/errors.md`). All paths either already expose
+the closed `{"category","code","message"}` JSON or degrade explicitly to
+`Unknown` (classic opens have no handle; managed loader refusals have no
+native error object; managed prechecks are not native failures).
+
+One hard gap requires a 23rd export: prepared-query handles store
+structured error state, but only database and transaction handles have a
+`*_last_error_json` accessor. Proposed addition:
+
+```c
+char *mgs_prepared_last_error_json(const MgsPreparedQuery *prepared);
+```
+
+Contract: identical to `mgs_prepared_last_error` except the result is an
+owned JSON string (same closed shape; caller frees with
+`mgs_string_free`), NULL when no error, cleared by the next successful
+prepared operation, failures replace earlier ones, never a channel for a
+NULL handle. Ownership/lifetime are unchanged (same borrowed handle).
+
+Rejected alternatives (recorded in the evidence inventory): dual-writing
+to the parent database handle (dangling `MgsDb*` after `mgs_close` while
+a prepared query remains valid), a polymorphic `void*` accessor
+(type-unsafe), and moving prepared errors onto the database (breaks the
+M3.1 handle-local contract).
+
+Also proposed for acceptance with this amendment (no ABI impact):
+
+- Strict unknown rule: absent/malformed/unknown-category metadata yields
+  `NativeCategory = Unknown` and `NativeCode = null`; a known category
+  with no code yields `NativeCode = null`; codes are never inferred from
+  message text, and a code presented with an unknown category is not
+  exposed publicly.
+- `docs/error-reference.md` becomes the stable shim-error registry
+  (`MGS-001`, `MGS-002`, `MGS-003`, `MGS-004`) plus the core
+  category/code mapping and a link to the pinned core error reference.
+- A pure managed parser entry point (no mutable state, never throws) is
+  added for defensive testing of malformed metadata.
+
+Implementation is gated on explicit approval of this amendment.
