@@ -3,6 +3,27 @@
 Format follows Keep a Changelog. Versions follow SemVer for the managed
 package and never copy the upstream Minigraf version number.
 
+## [0.1.0-preview.5] - 2026-10-18
+
+Qualified M3.2 preview release. The owned native surface now covers
+explicit write transactions, typed open options, structured native
+errors, typed Ref/Keyword values, prepared queries, and verified runtime
+identity, on top of the M3.1 surface. Qualified on `win-x64`, `linux-x64`
+and `osx-arm64` for `net8.0`/`net10.0` with NativeAOT consumers; frozen at
+22 native exports and 24 public managed types (ADR 0003 closed). This
+release contains the M3.2 entries listed under Unreleased through M3.2g.
+No behavior changed for the release revision: the release revision only
+bumps the package version and updates release documentation; the
+qualified source baseline is `33bda67` (evidence `1bea537`), and the
+released artifact is built by CI from the release commit, downloaded and
+verified, never rebuilt. Bounded claims preserved: rules are not
+transactional, prepared queries executed inside an open transaction see
+committed facts only, `Synchronous.Normal` makes no crash-durability
+claim, and `linux-arm64`/`osx-x64` remain unqualified. See
+`docs/evidence/m3.2/review.md` (ADR 0003 closure and release-readiness
+verdict) and `docs/evidence/m3.2/qualification.md` (integrated
+scenarios).
+
 ## [0.1.0-preview.4] - 2026-10-17
 
 Freeze and first release of the qualified M3.1 surface. This release

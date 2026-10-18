@@ -210,7 +210,7 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "release $tag already exists"
           else
-            notes=$(printf 'MinigrafSharp %s\n\nQualified on win-x64, linux-x64, and osx-arm64 for .NET 8 and .NET 10. NativeAOT qualified on all three RIDs with .NET 10. Includes the owned prepared-query shim and the provisional prepared-query surface (ADR 0002). Uses Minigraf/minigraf-c v2.0.7. This is a preview release; see the compatibility and v2 qualification documentation for known upstream storage/recovery limitations.\n\nPackage SHA-256: %s\n' "$VERSION" "$PACKAGE_SHA")
+            notes=$(printf 'MinigrafSharp %s\n\nQualified on win-x64, linux-x64, and osx-arm64 for .NET 8 and .NET 10. NativeAOT qualified on all three RIDs with .NET 10. Includes the owned prepared-query shim and the qualified native surface (ADR 0002/0003): prepared queries, explicit write transactions, typed open options, structured native errors, typed Ref/Keyword values, and verified runtime identity. Uses Minigraf/minigraf-c v2.0.7. This is a preview release; see the compatibility and v2 qualification documentation for known upstream storage/recovery limitations.\n\nPackage SHA-256: %s\n' "$VERSION" "$PACKAGE_SHA")
             gh release create "$tag" --title "MinigrafSharp $VERSION" --notes "$notes" --target "$SHA" --prerelease
             echo "created pre-release $tag"
           fi

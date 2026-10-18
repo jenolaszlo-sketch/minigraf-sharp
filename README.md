@@ -6,16 +6,21 @@ an embedded single-file bi-temporal graph database with Datalog queries.
 > MinigrafSharp is an independent .NET binding for Minigraf and is not
 > currently an official Project Minigraf package.
 
-> Status: preview release candidate `0.1.0-preview.4`, qualified by CI for
+> Status: preview release candidate `0.1.0-preview.5`, qualified by CI for
 > `win-x64`, `linux-x64` and `osx-arm64` (`net8.0`/`net10.0`, NativeAOT on
 > net10.0). The public API is `MinigrafDatabase.OpenMemory()` /
 > `Open(string)` plus `ExecuteRaw(string)` returning raw native JSON,
 > `Execute(string)` returning typed `MinigrafResult` values, and
 > `Checkpoint()` for explicit WAL flushes, against the pinned native engine.
-> The provisional prepared-query surface (`MinigrafPreparedDatabase`,
-> `MinigrafPreparedQuery`, `MinigrafBindValue`) is added by the same
-> package. Published previews are available on NuGet.org under the
-> `MinigrafSharp` package id. See
+> The qualified native surface (ADR 0002/0003) adds the provisional
+> prepared-query surface (`MinigrafPreparedDatabase`, `MinigrafPreparedQuery`,
+> `MinigrafBindValue`), explicit write transactions
+> (`MinigrafPreparedDatabase.BeginWrite` / `MinigrafWriteTransaction`),
+> typed open options (`MinigrafOpenOptions`, `MinigrafSyncMode`), structured
+> native errors (`MinigrafNativeErrorCategory` plus
+> `NativeCategory`/`NativeCode`), typed Ref/Keyword result values, and
+> verified runtime identity (`MinigrafRuntimeIdentity`). Published previews
+> are available on NuGet.org under the `MinigrafSharp` package id. See
 > [docs/product-spec.md](docs/product-spec.md) and [ROADMAP.md](ROADMAP.md).
 
 > MinigrafSharp currently targets Minigraf 2.0.7 (pinned core refreshed
@@ -85,10 +90,13 @@ non-finite floats arrive as null; see
 
 Pinned baseline: Minigraf core `v2.0.7`, minigraf-c `v2.0.7`
 (see [native/upstream.json](native/upstream.json)).
-Qualified and packaged platform: `win-x64` (lifecycle, raw/typed execution,
-file persistence, storage/recovery/temporal qualification, NativeAOT,
-trimming). No backup or crash-safety guarantees are claimed beyond the
-qualified observations in [docs/v2-qualification.md](docs/v2-qualification.md).
+Qualified and packaged platforms: `win-x64`, `linux-x64`, `osx-arm64`
+(engine lifecycle, raw/typed execution, prepared queries, explicit
+transactions, typed options, structured errors, typed Ref/Keyword values,
+runtime identity, file persistence, storage/recovery/temporal
+qualification, NativeAOT, trimming). No backup or crash-safety guarantees
+are claimed beyond the qualified observations in
+[docs/v2-qualification.md](docs/v2-qualification.md).
 
 ## Learn more
 

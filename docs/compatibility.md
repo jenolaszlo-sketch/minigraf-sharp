@@ -5,7 +5,7 @@
 | Minigraf core | `v2.0.7` (`2d2e5d7`) |
 | minigraf-c | `v2.0.7` (`4b598c0`) |
 | C header | `native/include/minigraf.h`, SHA-256 `8603C074…ADE7D` |
-| MinigrafSharp | `0.1.0-preview.4` (qualified release candidate) |
+| MinigrafSharp | `0.1.0-preview.5` (qualified release candidate) |
 | Managed TFMs | `net8.0`, `net10.0` |
 | Packaged + qualified RIDs | `win-x64`, `linux-x64`, `osx-arm64` |
 | Upstream file format | v7 (`src/storage/mod.rs`: `FORMAT_VERSION = 7`) |
@@ -19,9 +19,9 @@ that CI qualified on their own OS, so qualified = packaged.
 
 | RID | Asset source | Packaged | Qualified | NativeAOT | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `win-x64` | upstream windows x86_64 zip | yes | yes (v2.0.7: local requalification, 2026-10-17; CI run 39038565443) | yes (net10.0) | lifecycle + execution + persistence + v2 qualification + shim packaging |
-| `linux-x64` | upstream linux x86_64 | yes | yes (v2.0.7: CI run 39038565443, 2026-10-17) | yes (net10.0) | CI-qualified on `ubuntu-latest`; engine suites + shim harnesses + package consumption |
-| `osx-arm64` | upstream macos universal2 | yes | yes (v2.0.7: CI run 39038565443, 2026-10-17) | yes (net10.0) | CI-qualified on `macos-latest`; engine suites + shim harnesses + package consumption |
+| `win-x64` | upstream windows x86_64 zip | yes | yes (v2.0.7 + M3.2: CI run 39093197042, 2026-10-18) | yes (net10.0) | lifecycle + execution + persistence + v2 qualification + M3 prepared/transaction/options/error/value/identity + shim packaging |
+| `linux-x64` | upstream linux x86_64 | yes | yes (v2.0.7 + M3.2: CI run 39093197042, 2026-10-18) | yes (net10.0) | CI-qualified on `ubuntu-latest`; engine suites + shim harnesses + package consumption |
+| `osx-arm64` | upstream macos universal2 | yes | yes (v2.0.7 + M3.2: CI run 39093197042, 2026-10-18) | yes (net10.0) | CI-qualified on `macos-latest`; engine suites + shim harnesses + package consumption |
 | `linux-arm64` | upstream linux aarch64 | no | no | unqualified | deferred: no runner yet |
 | `osx-x64` | upstream macos universal2 | no | no | unqualified | deferred: universal2 asset matches, no runner yet |
 

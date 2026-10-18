@@ -9,7 +9,7 @@ boundaries live in [v2-qualification.md](v2-qualification.md).
 | Field | Value |
 | --- | --- |
 | PackageId | `MinigrafSharp` |
-| Version | `0.1.0-preview.4` (preview line; not a stable release) |
+| Version | `0.1.0-preview.5` (preview line; not a stable release) |
 | TFMs | `net8.0`, `net10.0` |
 | RIDs | `win-x64`, `linux-x64`, `osx-arm64` |
 | License | Apache-2.0 |
