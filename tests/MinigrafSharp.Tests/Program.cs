@@ -134,13 +134,14 @@ Check(
             "MinigrafSharp.MinigrafResultException",
             "MinigrafSharp.MinigrafRetractionResult",
             "MinigrafSharp.MinigrafRow",
+            "MinigrafSharp.MinigrafRuntimeIdentity",
             "MinigrafSharp.MinigrafSyncMode",
             "MinigrafSharp.MinigrafTransactionResult",
             "MinigrafSharp.MinigrafValue",
             "MinigrafSharp.MinigrafValueKind",
             "MinigrafSharp.MinigrafWriteTransaction",
         }.Order()),
-    "public types are exactly the M1c surface plus the M3.1b prepared surface, the M3.2b transaction/error surface and the M3.2c open-options surface");
+    "public types are exactly the M1c surface plus the M3.1b/M3.2b/M3.2c surfaces and the M3.2f runtime identity");
 Check(exported.All(t => t.Namespace == "MinigrafSharp"), "no public Interop/Native types");
 bool leaksNative = false;
 foreach (Type type in exported)

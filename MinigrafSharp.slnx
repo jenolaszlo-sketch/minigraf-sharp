@@ -12,6 +12,7 @@
     <Project Path="tests/MinigrafSharp.OpenOptionsQualificationTests/MinigrafSharp.OpenOptionsQualificationTests.csproj" />
     <Project Path="tests/MinigrafSharp.StructuredErrorQualificationTests/MinigrafSharp.StructuredErrorQualificationTests.csproj" />
     <Project Path="tests/MinigrafSharp.TypedValueQualificationTests/MinigrafSharp.TypedValueQualificationTests.csproj" />
+    <Project Path="tests/MinigrafSharp.RuntimeIdentityQualificationTests/MinigrafSharp.RuntimeIdentityQualificationTests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/MinigrafSharp.QuickStart/MinigrafSharp.QuickStart.csproj" />

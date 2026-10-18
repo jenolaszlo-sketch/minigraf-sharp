@@ -6,3 +6,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("MinigrafSharp.TransactionQualificationTests")]
 [assembly: InternalsVisibleTo("MinigrafSharp.StructuredErrorQualificationTests")]
 [assembly: InternalsVisibleTo("MinigrafSharp.TypedValueQualificationTests")]
+[assembly: InternalsVisibleTo("MinigrafSharp.RuntimeIdentityQualificationTests")]

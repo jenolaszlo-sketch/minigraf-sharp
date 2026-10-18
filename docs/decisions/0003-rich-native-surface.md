@@ -287,7 +287,7 @@ Excluded with recorded reasons: `page_cache_size`, `allow_unlocked`.
 Invalid forms (negative/out-of-range, unknown enum, malformed JSON) fail
 before any database use.
 
-## Identity policy
+## Identity policy (implemented 2026-10-17; see docs/evidence/m3.2/identity.md)
 
 - Expose only stable concepts: managed package version, shim ABI version,
   shim source revision, core version, core commit. Binary hashes remain

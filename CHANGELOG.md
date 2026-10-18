@@ -39,6 +39,19 @@ ative/shim/tests/characterization.rs, run inside
 
 ### Added
 
+- M3.2f runtime identity (ADR 0003): new public
+  `MinigrafRuntimeIdentity` (`Current` plus immutable
+  `PackageVersion`, `ShimAbiVersion`, `ShimSourceRevision`,
+  `CoreVersion`, `CoreCommit`) derived from the existing verified
+  `mgs_shim_identity` token and the assembly informational version. No
+  native exports or header change (ABI 22); identity is only observable
+  through a successfully verified shim, refused candidates do not poison
+  later loads, and the token is documented as build-declared
+  compatibility/provenance rather than a binary measurement. Internal
+  closed-token validation rejects malformed/missing/wrong-typed/empty/
+  mismatched tokens. Qualified 14/14 on net8.0/net10.0 with the full
+  M3.1-M3.2e regression; public-surface closure now 24 types. Evidence
+  in `docs/evidence/m3.2/identity.md`. No publication.
 - M3.2e typed Ref/Keyword values (approved bounded change under ADR
   0003): the owned shim serializes `Ref` and `Keyword` as typed
   envelopes (`{"type":"ref"|"keyword","value":...}`), and the managed
