@@ -39,6 +39,24 @@ ative/shim/tests/characterization.rs, run inside
 
 ### Added
 
+- M3.2g integrated qualification and release readiness (ADR 0003 closed):
+  no new capability, ABI, or public type. A new integrated harness
+  composes the M3.1 prepared surface with the M3.2 rich surface against
+  real native state and proves five end-to-end scenarios (open-with-
+  options -> transaction -> commit -> prepared query -> reopen; rollback;
+  failure recovery with a structured error then a successful commit;
+  typed Ref/Keyword write, decode and prepared-bind round trip; native
+  identity refusal on every open path before a verified load) and nine
+  cross-feature invariants (thread-local transaction guard across
+  databases; disposal = rollback; prepared-query committed-only
+  visibility; transactional staged + committed reads; rules not
+  transactional; failed-staging usability; failed-commit retained
+  diagnostics; typed values never ordinary strings; identity before use).
+  ADR 0003 closed requirement-by-requirement with the independent release
+  review; the frozen surface is 22 native exports and 24 public managed
+  types. Verdict: ready for a controlled preview release as a separate
+  dispatch. Evidence in `docs/evidence/m3.2/qualification.md` and
+  `docs/evidence/m3.2/review.md`. No publication.
 - M3.2f runtime identity (ADR 0003): new public
   `MinigrafRuntimeIdentity` (`Current` plus immutable
   `PackageVersion`, `ShimAbiVersion`, `ShimSourceRevision`,

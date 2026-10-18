@@ -1,6 +1,6 @@
 # M3.2 plan (checkpoint record)
 
-Status: M3.2a executed; ADR 0003 accepted; M3.2b, M3.2c, M3.2d, M3.2e and M3.2f implemented and locally qualified (cross-RID CI pending each slice's evidence binding); M3.2g pending. Baseline is the
+Status: M3.2a executed; ADR 0003 accepted and **closed at M3.2g**; M3.2b, M3.2c, M3.2d, M3.2e, M3.2f and M3.2g implemented and qualified (see each slice's evidence binding); M3.2 complete. Baseline is the
 frozen M3.1 release: `0.1.0-preview.4`, qualified source `418e9fc`,
 post-release correction `ff5a7aa`, package SHA-256
 `D1F22A7D98CC50B3711572927BCC03F236391A87A2758D210B989E4CCC875D86`

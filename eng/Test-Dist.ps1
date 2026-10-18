@@ -80,6 +80,7 @@ try {
         Run "errors $tfm" @("run", "--project", "tests/MinigrafSharp.StructuredErrorQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "values $tfm" @("run", "--project", "tests/MinigrafSharp.TypedValueQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "identity $tfm" @("run", "--project", "tests/MinigrafSharp.RuntimeIdentityQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
+        Run "integrated $tfm" @("run", "--project", "tests/MinigrafSharp.IntegratedQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
     }
 }
 finally { Pop-Location }

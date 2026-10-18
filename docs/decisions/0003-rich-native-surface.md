@@ -341,6 +341,7 @@ new surface; publication (separate dispatch).
 Evidence: `docs/evidence/m3.2/` per slice (characterization, transactions,
 open-options, errors, values, identity, qualification, review), plus the
 existing `docs/verification.md` M3.1 regression record.
+
 ## Amendment for M3.2d ABI review - accepted 2026-10-17
 
 Structured-error completion (M3.2d) inventoried every fallible owned-shim
@@ -383,3 +384,17 @@ Also proposed for acceptance with this amendment (no ABI impact):
   added for defensive testing of malformed metadata.
 
 Approved as proposed: exactly one new export (mgs_prepared_last_error_json), the strict unknown rule, the MGS registry, and the pure internal parser test entry point. ABI inventory reconciliation (2026-10-17, during M3.2d): the aggregate count had drifted by one; the true inventory is 12 (M3.1) + 7 (M3.2b) + 2 (M3.2c) + 1 (M3.2d) = **22 exports**, with no ABI content missing. The generated header is authoritative. No further approval gate applies unless implementation requires another ABI addition or a public-surface change.
+## M3.2g closure (2026-10-18) - closed
+
+Closed after integrated qualification: all five scenarios (commit/query,
+rollback, failure recovery, typed values, identity refusal) pass and all
+nine cross-feature invariants hold on the qualified platforms, net8.0 and
+net10.0. Requirement-by-requirement outcomes and the independent release
+review are in `docs/evidence/m3.2/review.md`; the integrated scenarios and
+full matrix are in `docs/evidence/m3.2/qualification.md`. The frozen
+surface is **22 native exports** and **24 public managed types**. The only
+non-PASS items are the deliberate bounded claims (`Synchronous.Normal`
+durability; rules not transactional; prepared-query committed-only
+visibility), out-of-scope exclusions, and the unqualified `linux-arm64`/
+`osx-x64` RIDs. Verdict: ready for a controlled preview release as a
+separate dispatch. No publication in M3.2g.
