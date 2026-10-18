@@ -109,7 +109,7 @@
                                 "win-x64":  {
                                                 "rid":  "win-x64",
                                                 "binary":  "minigrafsharp_shim.dll",
-                                                "binary_sha256":  "0A7DE62B4F1D6EBE87EED622D449C4CF8A6B510E19E2452D0D458EB6D92847EA",
+                                                "binary_sha256":  "F776AC6F2AFA7B65906C6A0ABE87EAE9CB323487767D528FCFB7BD7218B9CB08",
                                                 "binary_bytes":  2281472,
                                                 "qualified":  true
                                             },

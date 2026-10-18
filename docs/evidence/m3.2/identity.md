@@ -98,3 +98,32 @@ the field/reason; failure never yields a partially populated identity.
 - Per-RID CI results and evidence-bound shim hashes are appended after
   the slice run; `linux-arm64`/`osx-x64` remain unqualified. No
   publication.
+## Cross-RID CI qualification (M3.2f)
+
+CI run https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39091125054
+on revision `e92f17d` (all 11 jobs green):
+- runtime-identity harness 14/14 on net8.0 and net10.0 on each `dist`
+  runner (win-x64, linux-x64, osx-arm64);
+- Rust 14 unit tests + 18 probes, shim 26/26, prepared 26/26,
+  transactions 18/18, options 11/11, structured errors 19/19, typed
+  values 15/15 on every RID; packaging, verifier/tamper and NativeAOT
+  consumers green.
+
+No native source change was made in this slice, so the shim ABI and
+header pin are unchanged (`38B7FEE0...BA92`). Evidence-bound shim
+artifacts recorded in `native/upstream.json` (`qualified: true`, rustc
+1.99.1 / cbindgen 0.29.4 per RID):
+
+| RID | Shim SHA-256 | Bytes |
+| --- | --- | --- |
+| win-x64 | `F776AC6F2AFA7B65906C6A0ABE87EAE9CB323487767D528FCFB7BD7218B9CB08` | 2281472 |
+| linux-x64 | `36DF913A482FAD16D45C3F4564C0D1C7C4182CCDFCC90F9CAFA67DAD0DD13AB8` | 2960536 |
+| osx-arm64 | `45B3654C2859A6ACB71A373A48CC29997D868F47231BFC2D929747C9A8451759` | 2535024 |
+
+Reproducibility observation (matches the recorded convention):
+linux-x64 and osx-arm64 rebuilt byte-identically to the M3.2e
+qualification; win-x64 differs only because of PE linker timestamps (no
+byte-identical claim is made on Windows). Downloaded staging artifacts
+were re-verified locally (`eng/Verify-NativeStaging.ps1`): all three
+RIDs pass. ABI: 22 exports; public surface: 24 types.
+`linux-arm64`/`osx-x64` remain unqualified. No publication occurred.
