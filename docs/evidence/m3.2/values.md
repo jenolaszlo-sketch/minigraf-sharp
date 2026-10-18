@@ -107,3 +107,27 @@ only. Non-typed parity remains the M3.1 contract.
   C behavior; unchanged).
 - Cross-RID CI results and per-RID shim hashes are appended after the
   slice run; `linux-arm64`/`osx-x64` remain unqualified. No publication.
+## Cross-RID CI qualification (M3.2e)
+
+CI run https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39088870754
+on revision `0eaa05b` (all 11 jobs green):
+- typed-value harness 15/15 on net8.0 and net10.0 on each `dist` runner
+  (win-x64, linux-x64, osx-arm64);
+- Rust 14 unit tests + 18 probes, shim 26/26, prepared 26/26,
+  transactions 18/18, options 11/11, structured errors 19/19 on every
+  RID; packaging, verifier/tamper and NativeAOT consumers green.
+
+Evidence-bound shim artifacts recorded in `native/upstream.json`
+(`qualified: true`, rustc 1.99.1 / cbindgen 0.29.4 per RID):
+
+| RID | Shim SHA-256 | Bytes |
+| --- | --- | --- |
+| win-x64 | `0A7DE62B4F1D6EBE87EED622D449C4CF8A6B510E19E2452D0D458EB6D92847EA` | 2281472 |
+| linux-x64 | `36DF913A482FAD16D45C3F4564C0D1C7C4182CCDFCC90F9CAFA67DAD0DD13AB8` | 2960536 |
+| osx-arm64 | `45B3654C2859A6ACB71A373A48CC29997D868F47231BFC2D929747C9A8451759` | 2535024 |
+
+Downloaded staging artifacts were re-verified locally
+(`eng/Verify-NativeStaging.ps1`): all three RIDs pass with no divergence
+notes. ABI unchanged at 22 exports; public surface unchanged at 23 types
+(enum members only). `linux-arm64`/`osx-x64` remain unqualified. No
+publication occurred.
