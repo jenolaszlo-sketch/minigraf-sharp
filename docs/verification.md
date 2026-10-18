@@ -1091,3 +1091,53 @@ against the packaged assembly (19 types, zero pointer members).
 `0.1.0-preview.3` was already published and is immutable; `0.1.0-preview.4`
 is the release of the qualified M3.1 surface, produced from the qualified
 source. `linux-arm64` and `osx-x64` remain unbuilt and unqualified.
+
+# Release record (0.1.0-preview.5, M3.2 native surface)
+
+Release revision: `700bcf547cafbb3028c7096a499659fee4dbc577` (release
+metadata commit: version bump `0.1.0-preview.4` -> `0.1.0-preview.5`, the
+CHANGELOG release section, README/compatibility/packaging updates, the
+`eng/Test-PackageConsumer.ps1` example, the `verify-published.yml` release
+notes, and the independent review
+`docs/release-review-0.1.0-preview.5.md`). The frozen surface is the
+**22-export** native ABI and the **24-type** public managed surface closed
+at M3.2g. Diff vs the M3.2g qualified baseline (`33bda67`, evidence
+`1bea537`, CI run 39093197042) is limited to the package version and
+release documentation; no managed or native behavior, ABI, public type or
+semantics change.
+
+- Qualification: CI run
+  https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39095902696
+  on `700bcf5`, all 11 jobs green (format, three on-OS `dist`, `pack`, six
+  `consume`).
+- Exact artifact: `MinigrafSharp.0.1.0-preview.5.nupkg`, SHA-256
+  `28732C044910A8CCEC5CB96A03FBBA38246255C5AE925AF4524E20E8F599FE11`
+  (6898055 bytes). The `pack` job's recorded hash, the downloaded
+  artifact's locally computed hash and the `verify-published` resolve
+  output agree. The artifact was downloaded from that run and verified
+  locally (`eng/Verify-Package.ps1` against the same run's per-RID staging
+  artifacts: engine pins, shim chain of custody, RID set, legal files, no
+  forbidden payload).
+- Publish: `publish.yml` run
+  https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39096585262
+  (workflow_dispatch at `700bcf5`) resolved and validated that exact CI
+  run, downloaded its immutable `nupkg` and the staging artifacts,
+  re-verified the package, obtained a short-lived key via GitHub OIDC
+  trusted publishing, and pushed it. Nothing was rebuilt at publish time.
+- Public-feed verification: `verify-published.yml` run
+  https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39096615454
+  revalidated the same CI run and package, waited for indexing, and all
+  six clean consumers (Windows/Linux/macOS x net8.0/net10.0, NativeAOT
+  included) passed against nuget.org. nuget.org serves
+  `0.1.0-preview.5`.
+- Tag/release: annotated tag `v0.1.0-preview.5` points at `700bcf5`
+  (annotated tag object `0bfcf59d1c9b9cbebc1f8ef13a4e76fd51f85b81`); the
+  `finalize` job completed successfully and created the tag and the GitHub
+  pre-release `MinigrafSharp 0.1.0-preview.5` automatically (the `GH_REPO`
+  fix from preview.4 is in effect).
+
+## Scope notes
+
+`0.1.0-preview.3` and `0.1.0-preview.4` remain published and immutable.
+`linux-arm64` and `osx-x64` remain unbuilt and unqualified, never recorded
+as passed.

@@ -152,3 +152,16 @@ was modified; this review adds the M3.2g composition evidence only.
 - `linux-arm64` and `osx-x64` remain unqualified.
 - No API/ABI/semantic change is part of this review; it records tested
   behavior and closure only.
+
+## 6. Release record (M3.2 released)
+
+M3.2 is both qualified and released. The versioned release revision is
+`700bcf5` (metadata-only bump to `0.1.0-preview.5`), qualified by CI run
+39095902696, published by `publish.yml` run 39096585262 (trusted
+publishing, no rebuild), and verified on the public feed by
+`verify-published.yml` run 39096615454. Package
+`MinigrafSharp.0.1.0-preview.5.nupkg`, SHA-256
+`28732C044910A8CCEC5CB96A03FBBA38246255C5AE925AF4524E20E8F599FE11`;
+annotated tag `v0.1.0-preview.5`. The M3.2g qualified source `33bda67`
+(evidence `1bea537`) remains the capability qualification anchor. Full
+details in `docs/verification.md` (release record).
