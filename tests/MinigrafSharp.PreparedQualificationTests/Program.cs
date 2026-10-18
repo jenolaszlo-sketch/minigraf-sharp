@@ -292,8 +292,13 @@ internal static class Program
     private static Guid UuidOf(MinigrafPreparedDatabase db, string query)
     {
         var rows = ExpectQuery(db.Execute(query), "uuid probe");
-        string text = rows.Rows[0][0].GetString();
-        Check(Guid.TryParse(text, out Guid value), "row is not a canonical UUID: " + text);
+        // M3.2e: the shim-backed surface decodes entity references as typed
+        // Ref values; the string form is kept for other surfaces/fixtures.
+        MinigrafValue cell = rows.Rows[0][0];
+        string text = cell.Kind == MinigrafValueKind.Ref
+            ? cell.GetRef().ToString("D")
+            : cell.GetString();
+        Check(Guid.TryParseExact(text, "D", out Guid value), "row is not a canonical UUID: " + text);
         return value;
     }
 

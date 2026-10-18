@@ -245,7 +245,10 @@ internal static class Program
 
         var rows = Rows(db, "(query [:find ?y :where (reach :a ?y)])");
         Check(rows.Count == 1, "rule registered inside the rolled-back transaction persists");
-        Check(rows[0]["?y"].GetString() == ":b", "rule sees committed facts only");
+        // M3.2e: keyword values are typed on the owned-shim surface.
+        Check(rows[0]["?y"].Kind == MinigrafValueKind.Keyword &&
+              rows[0]["?y"].GetKeyword() == ":b",
+            "rule sees committed facts only (typed keyword)");
     }
 
     private static void SameThreadCrossDatabaseGuard()

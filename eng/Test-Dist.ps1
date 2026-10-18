@@ -78,6 +78,7 @@ try {
         Run "transactions $tfm" @("run", "--project", "tests/MinigrafSharp.TransactionQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "options $tfm" @("run", "--project", "tests/MinigrafSharp.OpenOptionsQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
         Run "errors $tfm" @("run", "--project", "tests/MinigrafSharp.StructuredErrorQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
+        Run "values $tfm" @("run", "--project", "tests/MinigrafSharp.TypedValueQualificationTests", "-c", "Release", "--no-build", "-f", $tfm)
     }
 }
 finally { Pop-Location }

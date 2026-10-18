@@ -162,9 +162,78 @@ internal static class MinigrafResultDecoder
             JsonValueKind.True => new MinigrafValue(true),
             JsonValueKind.False => new MinigrafValue(false),
             JsonValueKind.Null => MinigrafValue.Null,
+            JsonValueKind.Object => DecodeTypedValue(cell),
             _ => throw new MinigrafResultException(
-                "Native query values must be JSON scalars."),
+                "Native query values must be JSON scalars or typed value envelopes."),
         };
+
+    /// <summary>
+    /// Decodes the owned shim's typed value envelopes (M3.2e). The envelope is
+    /// closed: exactly <c>type</c> and <c>value</c> string properties. Invalid
+    /// envelopes never silently become scalar values; they raise
+    /// <see cref="MinigrafResultException"/>. Ordinary JSON strings that happen
+    /// to resemble a UUID or keyword stay <see cref="MinigrafValueKind.String"/>.
+    /// </summary>
+    private static MinigrafValue DecodeTypedValue(JsonElement cell)
+    {
+        int properties = 0;
+        string? type = null;
+        string? value = null;
+        foreach (JsonProperty property in cell.EnumerateObject())
+        {
+            properties++;
+            if (properties > 2)
+            {
+                throw new MinigrafResultException(
+                    "Typed value envelope has unexpected properties.");
+            }
+
+            switch (property.Name)
+            {
+                case "type":
+                    if (property.Value.ValueKind != JsonValueKind.String)
+                    {
+                        throw new MinigrafResultException(
+                            "Typed value envelope 'type' must be a string.");
+                    }
+
+                    type = ReadString(property.Value);
+                    break;
+                case "value":
+                    if (property.Value.ValueKind != JsonValueKind.String)
+                    {
+                        throw new MinigrafResultException(
+                            "Typed value envelope 'value' must be a string.");
+                    }
+
+                    value = ReadString(property.Value);
+                    break;
+                default:
+                    throw new MinigrafResultException(
+                        "Typed value envelope has an unexpected property '" + property.Name + "'.");
+            }
+        }
+
+        if (properties != 2 || type is null || value is null)
+        {
+            throw new MinigrafResultException(
+                "Typed value envelope must contain exactly 'type' and 'value'.");
+        }
+
+        return type switch
+        {
+            "ref" => Guid.TryParseExact(value, "D", out Guid reference)
+                ? MinigrafValue.RefValue(reference)
+                : throw new MinigrafResultException(
+                    "Typed ref value is not a canonical hyphenated UUID."),
+            "keyword" => value.Length > 1 && value[0] == ':'
+                ? MinigrafValue.KeywordValue(value)
+                : throw new MinigrafResultException(
+                    "Typed keyword value must be a non-empty colon-prefixed string."),
+            _ => throw new MinigrafResultException(
+                "Unknown typed value kind '" + type + "'."),
+        };
+    }
 
     // The result boundary stays closed: System.Text.Json's reader can throw
     // InvalidOperationException for string content it cannot transcode (for

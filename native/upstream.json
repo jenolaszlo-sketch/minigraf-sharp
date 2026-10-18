@@ -83,11 +83,6 @@
                                                    }
                            },
                  "toolchain":  {
-                                   "win-x64":  {
-                                                   "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-                                                   "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
-                                                   "cbindgen":  "cbindgen 0.29.4"
-                                               },
                                    "linux-x64":  {
                                                      "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
                                                      "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
@@ -97,7 +92,12 @@
                                                      "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
                                                      "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
                                                      "cbindgen":  "cbindgen 0.29.4"
-                                                 }
+                                                 },
+                                   "win-x64":  {
+                                                   "rustc":  "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+                                                   "cargo":  "cargo 1.99.1 (5f94df478 2026-08-27)",
+                                                   "cbindgen":  "cbindgen 0.29.4"
+                                               }
                                },
                  "header":  {
                                 "path":  "native/include/minigrafsharp_shim.h",
@@ -109,8 +109,8 @@
                                 "win-x64":  {
                                                 "rid":  "win-x64",
                                                 "binary":  "minigrafsharp_shim.dll",
-                                                "binary_sha256":  "2F8CDF1C89FD4CBEBCF48FAFB9A4C773136DBBCDE341D6857590558AB36FCAF0",
-                                                "binary_bytes":  2279424,
+                                                "binary_sha256":  "3D80C1780BBCB574A86AC3F3A615B1C1FD677B7518DE381EF8EE59BDCB6965E0",
+                                                "binary_bytes":  2281472,
                                                 "qualified":  true
                                             },
                                 "linux-x64":  {

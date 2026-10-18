@@ -153,6 +153,8 @@ internal static class Program
             Case("write transaction failed commit diagnostics survive terminalization", TxFailedCommitDiagnostics);
             Case("write transaction thread affinity enforced in shim", TxThreadAffinity);
             Case("write transaction begin reentrancy is INT-001", TxBeginReentrancy);
+            Case("typed value envelopes: ref/keyword typed, scalars unchanged", TypedEnvelopes);
+            Case("official C serialization keeps flattened refs/keywords", OfficialFlattening);
             Case("open options: valid schema opens with the requested behavior", OpenOptionsValid);
             Case("open options: closed schema rejects unknown keys and wrong types", OpenOptionsInvalid);
             Case("open options: structured open failure uses the out-parameter", OpenOptionsOpenFailure);
@@ -376,6 +378,65 @@ internal static class Program
         Check(rows is not null && CountResultRows(rows) == 2,
             "owner-staged facts committed: " + rows);
         Shim.mgs_close(db);
+    }
+
+    private static void TypedEnvelopes()
+    {
+        var db = OpenMem();
+        try
+        {
+            Check(Exec(db, "(transact [[:alice :friend #uuid \"550e8400-e29b-41d4-a716-446655440001\"] [:alice :status :Status/Active] [:alice :s \"text\"] [:alice :i 42] [:alice :b true]])").Contains("transacted"),
+                "typed fixture");
+            var refCell = ResultsOf(Exec(db, "(query [:find ?v :where [:alice :friend ?v]])"))[0][0];
+            Check(refCell.GetProperty("type").GetString() == "ref",
+                "ref envelope type: " + refCell);
+            Check(refCell.GetProperty("value").GetString() == "550e8400-e29b-41d4-a716-446655440001",
+                "ref envelope UUID: " + refCell);
+            var kwCell = ResultsOf(Exec(db, "(query [:find ?v :where [:alice :status ?v]])"))[0][0];
+            Check(kwCell.GetProperty("type").GetString() == "keyword",
+                "keyword envelope type: " + kwCell);
+            Check(kwCell.GetProperty("value").GetString() == ":Status/Active",
+                "keyword envelope keeps exact text: " + kwCell);
+            // Other value kinds keep their scalar serialization.
+            Check(ResultsOf(Exec(db, "(query [:find ?v :where [:alice :s ?v]])"))[0][0].ValueKind == JsonValueKind.String,
+                "string stays a JSON string");
+            Check(ResultsOf(Exec(db, "(query [:find ?v :where [:alice :i ?v]])"))[0][0].GetInt64() == 42,
+                "integer stays a JSON number");
+            Check(ResultsOf(Exec(db, "(query [:find ?v :where [:alice :b ?v]])"))[0][0].ValueKind == JsonValueKind.True,
+                "boolean stays a JSON boolean");
+        }
+        finally { Shim.mgs_close(db); }
+    }
+
+    private static void OfficialFlattening()
+    {
+        var db = Official.minigraf_open_in_memory();
+        Check(db != IntPtr.Zero, "official in-memory open");
+        try
+        {
+            var tx = Official.minigraf_execute(db, "(transact [[:alice :friend #uuid \"550e8400-e29b-41d4-a716-446655440001\"] [:alice :status :Status/Active]])");
+            Check(tx != IntPtr.Zero, "official typed fixture");
+            Official.minigraf_string_free(tx);
+            var refJson = TakeOfficial(db, "(query [:find ?v :where [:alice :friend ?v]])");
+            Check(ResultsOf(refJson)[0][0].ValueKind == JsonValueKind.String &&
+                  ResultsOf(refJson)[0][0].GetString() == "550e8400-e29b-41d4-a716-446655440001",
+                "official ref is a flattened string: " + refJson);
+            var kwJson = TakeOfficial(db, "(query [:find ?v :where [:alice :status ?v]])");
+            Check(ResultsOf(kwJson)[0][0].ValueKind == JsonValueKind.String &&
+                  ResultsOf(kwJson)[0][0].GetString() == ":Status/Active",
+                "official keyword is a flattened string: " + kwJson);
+        }
+        finally { Official.minigraf_close(db); }
+    }
+
+    private static string TakeOfficial(IntPtr db, string datalog)
+    {
+        var r = Official.minigraf_execute(db, datalog);
+        Check(r != IntPtr.Zero, "official execute returned NULL");
+        var text = Marshal.PtrToStringUTF8(r);
+        Official.minigraf_string_free(r);
+        Check(text != null, "official result text");
+        return text!;
     }
 
     private static void OpenOptionsValid()
@@ -735,7 +796,10 @@ internal static class Program
             var carolRow = PExec(pq, "[{\"name\":\"age\",\"bind\":{\"kind\":\"val\",\"type\":\"integer\",\"value\":40}}]");
             Check(ResultsOf(carolRow)[0][0].GetString() == "Carol", "fresh state visible to prepared query: " + carolRow);
 
-            var whoRow = ResultsOf(Exec(db, "(query [:find ?e :where [?e :name \"Alice\"]])"))[0][0].GetString()!;
+            var whoCell = ResultsOf(Exec(db, "(query [:find ?e :where [?e :name \"Alice\"]])"))[0][0];
+            Check(whoCell.GetProperty("type").GetString() == "ref",
+                "entity result is a typed ref envelope (M3.2e): " + whoCell);
+            var whoRow = whoCell.GetProperty("value").GetString()!;
             var pqEntity = Prepare(db, "(query [:find ?n :where [$who :name ?n]])");
             var entityRows = PExec(pqEntity, "[{\"name\":\"who\",\"bind\":{\"kind\":\"entity\",\"value\":\"" + whoRow + "\"}}]");
             Check(ResultsOf(entityRows)[0][0].GetString() == "Alice", "entity bind: " + entityRows);

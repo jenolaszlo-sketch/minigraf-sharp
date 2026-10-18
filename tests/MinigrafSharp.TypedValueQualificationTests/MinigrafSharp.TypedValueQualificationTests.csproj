@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MinigrafSharp/MinigrafSharp.csproj" />
+  </ItemGroup>
+  <!-- Typed Ref/Keyword values (M3.2e) run against the owned shim and the
+       official engine (compatibility probes). The host RID is deployed. -->
+  <PropertyGroup>
+    <NativeRid Condition="'$(NativeRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</NativeRid>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NativeRid)' == 'win-x64'">
+    <OfficialNativeFile>minigraf.dll</OfficialNativeFile>
+    <ShimNativeFile>minigrafsharp_shim.dll</ShimNativeFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NativeRid)' == 'linux-x64'">
+    <OfficialNativeFile>libminigraf.so</OfficialNativeFile>
+    <ShimNativeFile>libminigrafsharp_shim.so</ShimNativeFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NativeRid)' == 'osx-arm64'">
+    <OfficialNativeFile>libminigraf.dylib</OfficialNativeFile>
+    <ShimNativeFile>libminigrafsharp_shim.dylib</ShimNativeFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OfficialNativeFile)' != '' And Exists('$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(OfficialNativeFile)')">
+    <None Include="$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(OfficialNativeFile)"
+          Link="runtimes/$(NativeRid)/native/$(OfficialNativeFile)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(ShimNativeFile)' != '' And Exists('$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(ShimNativeFile)')">
+    <None Include="$(MSBuildThisFileDirectory)/../../native/staging/$(NativeRid)/$(ShimNativeFile)"
+          Link="runtimes/$(NativeRid)/native/$(ShimNativeFile)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

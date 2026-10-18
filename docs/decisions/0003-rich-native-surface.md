@@ -251,7 +251,7 @@ leak.
 - Codes are exposed as strings because the core documents them as stable
   reference codes; no numeric constants are invented.
 
-## Typed Ref/Keyword values
+## Typed Ref/Keyword values (implemented 2026-10-17; see docs/evidence/m3.2/values.md)
 
 - The shim result serializer emits, for these two variants only, typed
   JSON objects instead of flattened strings:

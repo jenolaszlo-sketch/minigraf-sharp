@@ -905,6 +905,12 @@ pub extern "C" fn mgs_write_tx_free(tx: *mut MgsWriteTx) -> std::os::raw::c_int 
 
 // ─── Result JSON (byte-parity with the official minigraf-c shapes) ────────────
 
+/// Result value serialization. Scalar types keep the official minigraf-c
+/// shapes byte-for-byte; Ref and Keyword intentionally diverge (M3.2e,
+/// approved under ADR 0003) so the managed decoder can preserve their native
+/// types instead of losing them to flattened strings:
+/// `{"type":"ref","value":"<uuid>"}` and
+/// `{"type":"keyword","value":":<text>"}`.
 fn value_to_json(v: &Value) -> Json {
     match v {
         Value::String(s) => Json::String(s.clone()),
@@ -913,8 +919,8 @@ fn value_to_json(v: &Value) -> Json {
             .map(Json::Number)
             .unwrap_or(Json::Null),
         Value::Boolean(b) => Json::Bool(*b),
-        Value::Ref(u) => Json::String(u.to_string()),
-        Value::Keyword(k) => Json::String(k.clone()),
+        Value::Ref(u) => serde_json::json!({ "type": "ref", "value": u.to_string() }),
+        Value::Keyword(k) => serde_json::json!({ "type": "keyword", "value": k }),
         Value::Null => Json::Null,
     }
 }
@@ -1316,6 +1322,24 @@ mod tests {
         std::fs::remove_dir_all(&wal_path).unwrap();
         mgs_close(db);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn value_serialization_types_ref_and_keyword_and_keeps_scalars() {
+        let r = value_to_json(&Value::Ref(uuid::Uuid::nil()));
+        assert_eq!(r["type"], "ref");
+        assert_eq!(
+            r["value"],
+            "00000000-0000-0000-0000-000000000000"
+        );
+        let k = value_to_json(&Value::Keyword(":status/active".to_string()));
+        assert_eq!(k["type"], "keyword");
+        assert_eq!(k["value"], ":status/active");
+        // Other kinds keep the official serialization shapes.
+        assert_eq!(value_to_json(&Value::String("x".into())), Json::String("x".into()));
+        assert_eq!(value_to_json(&Value::Integer(7)), serde_json::json!(7));
+        assert_eq!(value_to_json(&Value::Boolean(true)), Json::Bool(true));
+        assert_eq!(value_to_json(&Value::Null), Json::Null);
     }
 
     #[test]

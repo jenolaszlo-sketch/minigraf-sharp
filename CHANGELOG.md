@@ -39,6 +39,21 @@ ative/shim/tests/characterization.rs, run inside
 
 ### Added
 
+- M3.2e typed Ref/Keyword values (approved bounded change under ADR
+  0003): the owned shim serializes `Ref` and `Keyword` as typed
+  envelopes (`{"type":"ref"|"keyword","value":...}`), and the managed
+  decoder adds `MinigrafValueKind.Ref`/`Keyword` with `GetRef()` (Guid)
+  and `GetKeyword()` (exact, case-sensitive). Kind-sensitive
+  equality/hash/formatting; ordinary UUID/keyword-looking strings stay
+  `String`; invalid envelopes raise `MinigrafResultException` and never
+  coerce. The official `MinigrafDatabase` path keeps flattened strings,
+  and all other value kinds retain byte-identical serialization; the
+  M3.1 byte-parity claim is superseded only for ref/keyword values.
+  Qualified on both TFMs with a new 15-case harness, Rust serializer
+  tests, 26/26 shim harness (typed shapes + official flattening), and
+  full M3.1/M3.2b/M3.2c/M3.2d regression. No new exports (ABI 22), no
+  new public type (surface 23). Evidence in
+  `docs/evidence/m3.2/values.md`. No publication.
 - M3.2d structured-error completion (ADR 0003 accepted amendment): one
   new export `mgs_prepared_last_error_json` (owned JSON, NULL when
   clean, cleared on success, failures replace; total ABI inventory 22,
