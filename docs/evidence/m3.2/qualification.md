@@ -108,3 +108,38 @@ engine hashes are re-recorded per RID for the M3.2g CI run below.
 - `Synchronous.Normal` accept/reject only; no durability claim under OS
   crash/power loss.
 - `linux-arm64` and `osx-x64` remain unqualified.
+## 8. Cross-RID CI qualification (M3.2g)
+
+CI run https://github.com/jenolaszlo-sketch/minigraf-sharp/actions/runs/39093197042
+on revision `33bda67` (all 11 jobs green):
+- integrated harness 13/13 on net8.0 and net10.0 on win-x64, linux-x64
+  and osx-arm64;
+- Rust 14 unit tests + 18 characterization probes; unit (24-type
+  public-surface closure), integration, qualification, shim 26/26,
+  prepared 26/26, transactions 18/18, options 11/11, structured errors
+  19/19, typed values 15/15, runtime identity 14/14 on both TFMs per RID;
+- packaging, verifier/tamper checks and the NativeAOT consumers green.
+
+Evidence-bound shim artifacts recorded in `native/upstream.json`
+(`qualified: true`; rustc 1.99.1 / cbindgen 0.29.4 per RID):
+
+| RID | Shim SHA-256 | Bytes |
+| --- | --- | --- |
+| win-x64 | `6131E649552FD70FDE8D91EE75FF4572656C854CF41F885362A2B0BF7F446978` | 2281472 |
+| linux-x64 | `36DF913A482FAD16D45C3F4564C0D1C7C4182CCDFCC90F9CAFA67DAD0DD13AB8` | 2960536 |
+| osx-arm64 | `45B3654C2859A6ACB71A373A48CC29997D868F47231BFC2D929747C9A8451759` | 2535024 |
+
+Reproducibility observation (matches the recorded convention): M3.2g
+changes no native source, so linux-x64 and osx-arm64 rebuilt
+byte-identically to M3.2f; win-x64 differs only by PE linker timestamps
+(no byte-identical claim on Windows). Downloaded staging artifacts were
+re-verified locally (`eng/Verify-NativeStaging.ps1`): all three RIDs pass.
+
+Frozen for the preview line: **22 native exports**, **24 public managed
+types** (header pin `38B7FEE0...BA92`, 6745 bytes). `linux-arm64` and
+`osx-x64` remain unqualified. No publication occurred.
+
+Qualified source revision for the release-readiness verdict: `33bda67`.
+The release candidate is the package produced by CI for that exact
+revision (downloaded and verified, never rebuilt); publication is a
+separate dispatch.
